@@ -1,5 +1,5 @@
 import * as net from "net";
-
+import * as fs from "fs";
 
 interface RAWMessage {
     data : number[];
@@ -10,9 +10,72 @@ interface RAWMessage {
     crc: number[];
     payload: number[];
 }
+interface Category {
+    name: string;
+    min: number;
+    max: number;
+}
+
+interface Type {
+    name: string;
+    unit: string;
+    datatype: string;
+    factor: string;
+    precision: string;
+    enable_byte: string;
+}
+
+interface Device {
+    family: number;
+    var: number;
+}
+
+interface ConfigItem {
+    command: string;
+    category: Category;
+    type: Type;
+    parameter: number;
+    description: string;
+    flag: number;
+    device: Device;
+}
+
+interface CmdMap {
+    [key: string]: ConfigItem[];
+ } 
+class Definition {
+
+    private config: ConfigItem[];
+
+    private mapCmds : CmdMap = {}; 
+
+    constructor(config: any) {
+        this.config = config;
+
+        for(let item of this.config) {
+            this.mapCmds[item.command].push(item);
+        }
+    }
+
+    public findCMD(cmd: string): ConfigItem | null
+    {
+        let item = this.mapCmds[cmd];
+        // TODO check for device familiy / variant
+        if (item && item.length > 0)
+            return item[0];
+        return null;
+    }
+
+}
 
 class BSB {
 
+    
+    constructor (definition: Definition) {
+        this.definition = definition;
+    }
+    
+    private definition: Definition;
     private client = new net.Socket();
 
     private buffer: number[] = [];
@@ -111,7 +174,11 @@ class BSB {
 }
 
 
-let bsb = new BSB();
+let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/output.json');
+let config = JSON.parse(rawdata as any);
+let definition = new Definition(config);
+
+let bsb = new BSB(definition);
 bsb.connect('192.168.203.179',1000);
 
 
