@@ -82,12 +82,17 @@ interface Device {
     var: number;
 }
 
+interface ConfigItemEnum {
+    [key: string]: string
+}
+
 interface ConfigItem {
     command: string;
     category: Category;
     type: Type;
     parameter: number;
     description: string;
+    enum: ConfigItemEnum;
     flag: number;
     device: Device;
 }
@@ -184,7 +189,11 @@ class BSB {
 
         if (msg.typ == MSG_TYPE.ANS)
         {
-            if (command?.type.datatype == 'VALS')
+            if (command?.type.datatype == 'ENUM'){
+                
+            }
+
+            if (command?.type.datatype == 'VALS' || command?.type.datatype == 'ENUM')
             {
                 let len = command.type.payload_length & 31;
                 let rawValue = 0;
@@ -192,19 +201,40 @@ class BSB {
                 let payload = msg.payload;
                 if (command.type.enable_byte > 0)
                     payload = payload.slice(1);
-                switch(len) {
-                    case 1:
-                        rawValue = Buffer.from(payload).readInt8();
-                        break;
-                    case 2:
-                        rawValue = Buffer.from(payload).readInt16BE();
-                        break;
-                    case 4:
-                        rawValue = Buffer.from(payload).readInt32BE();
-                        break;
+                // handle enable byte !!!
+                if (command.parameter == 8327)
+                    console.log(payload);
+                        
+                if (command?.type.datatype == 'VALS') {
+                    switch(len) {
+                        case 1:
+                            rawValue = Buffer.from(payload).readInt8();
+                            break;
+                        case 2:
+                            rawValue = Buffer.from(payload).readInt16BE();
+                            break;
+                        case 4:
+                            rawValue = Buffer.from(payload).readInt32BE();
+                            break;
+                    }
+                    value = (rawValue / command.type.factor).toFixed(command.type.precision) + command.type.unit;
                 }
-                
-                value = (rawValue / command.type.factor).toFixed(command.type.precision) + command.type.unit;
+
+                if (command?.type.datatype == 'ENUM')
+                {
+                    if (payload.length == 1)
+                        payload.unshift(0);
+
+                    if (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || 'VOLTAGEONOFF')
+                    {
+                        payload[1] = payload[1] & 0x01;
+                    }
+                    
+                    let enumKey = '0x' + this.toHexString(payload);
+                    value = command.enum[enumKey];
+                    if (!value)
+                        console.log('ENUM   '+payload+' - '+ enumKey +' ',command.enum);
+                }
                 //console.log('***' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
         }
