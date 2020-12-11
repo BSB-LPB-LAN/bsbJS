@@ -120,11 +120,33 @@ class Definition {
         }
     }
 
-    public findCMD(cmd: string): ConfigItem | null {
+    private findCMDs(cmd: string, dev_family: number, dev_variant: number): ConfigItem | null {
         let item = this.mapCmds[cmd];
-        // TODO check for device familiy / variant
-        if (item && item.length > 0)
-            return item[0];
+        if (item)
+            for (let entry of item) {
+                if ((entry.device.family == dev_family)
+                    && (entry.device.var == dev_variant))
+                    return entry;
+            }
+        return null;
+    }
+
+    public findCMD(cmd: string, dev_family: number, dev_variant: number): ConfigItem | null {
+
+        let result: ConfigItem | null = null;
+
+        // search for exact match of family and variant
+        result = this.findCMDs(cmd, dev_family, dev_variant);
+        if (result) return result;
+
+        // search for exact match of family
+        result = this.findCMDs(cmd, dev_family, 255);
+        if (result) return result;
+
+        // search for exact 255,255
+        result = this.findCMDs(cmd, 255, 255);
+        if (result) return result;
+
         return null;
     }
 
@@ -173,6 +195,14 @@ class BSB {
         return crc;
     }
 
+    private toHHMM(byteArray: number[]): string {
+
+        if (byteArray.length != 2)
+            return '--:--';
+
+        return byteArray[0].toString().padStart(2,'0') +':'+ byteArray[1].toString().padStart(2,'0');
+    }
+
     private parseMessage(msg: RAWMessage) {
 
         if (msg.typ == MSG_TYPE.QUR) {
@@ -181,32 +211,81 @@ class BSB {
             msg.cmd[1] = swap;
         }
 
-
         let cmd = '0x' + this.toHexString(msg.cmd);
-        let command = this.definition.findCMD(cmd);
+        let command = this.definition.findCMD(cmd, 163, 5);
 
-        let value = '';
+        let value: string | object | [] = '';
 
-        if (msg.typ == MSG_TYPE.ANS)
-        {
-            if (command?.type.datatype == 'ENUM'){
-                
+        if (msg.typ == MSG_TYPE.ANS) {
+            if (command?.parameter == 634) {
+              //  debugger;
             }
 
-            if (command?.type.datatype == 'VALS' || command?.type.datatype == 'ENUM')
-            {
-                let len = command.type.payload_length & 31;
-                let rawValue = 0;
-
+            if (command?.type.name == 'DATETIME') {
+                value = 'dateTIME'
                 let payload = msg.payload;
-                if (command.type.enable_byte > 0)
-                    payload = payload.slice(1);
-                // handle enable byte !!!
-                if (command.parameter == 8327)
-                    console.log(payload);
-                        
+                value =     payload[5].toString().padStart(2,'0')+':'+payload[6].toString().padStart(2,'0')+':'+payload[7].toString().padStart(2,'0')+' '
+                    +payload[3].toString().padStart(2,'0') +'.'+ payload[2].toString().padStart(2,'0')+'.'+(1900+payload[1]).toString().padStart(2,'0');
+            }
+
+            if (command?.type.name == 'VACATIONPROG' || command?.type.name=='SUMMERPERIOD')
+            {
+                let payload = msg.payload;
+                if ((payload[0] & 0x01) != 0x01) {
+                    value = payload[3].toString().padStart(2,'0') +'.'+ payload[2].toString().padStart(2,'0')+'.';
+                }
+                else 
+                    value = '---';
+            }
+
+            if (command?.type.name == 'TIMEPROG') {
+                let payload = msg.payload;
+
+                let values = [];
+
+                for (let i = 0; i < 3; i++) {
+                    // check if block is enabled
+                    if ((payload.slice(4 * i)[0] & 0x80) != 0x80) {
+                        let start = this.toHHMM(payload.slice(4 * i + 0, 4 * i + 2));
+                        let end = this.toHHMM(payload.slice(4 * i + 2, 4 * i + 4));
+                        values.push({
+                            "start": start,
+                            "end": end,
+                            toString : ()=> start+'-'+end
+                        });
+                    }
+                }
+
+                value = values;
+            }
+
+            if (command?.type.datatype == 'VALS' || command?.type.datatype == 'ENUM') {
+
+
+                let rawValue = 0;
+                let payload = msg.payload;
+                let len = command.type.payload_length & 31;
+
+                // WORKAROUND: no length is defined from the command table
                 if (command?.type.datatype == 'VALS') {
-                    switch(len) {
+
+                    // if the len is odd and no enable_byte, in most cases this should be added
+                    if ((payload.length == 3 || payload.length == 5) && command.type.enable_byte == 0) {
+                        command.type.enable_byte = 1;
+                    }
+
+                    if (len == 0)
+                        // if no enable_byte than just take length otherwise length-1
+                        len = payload.length - (command.type.enable_byte == 0 ? 0 : 1);
+                }
+
+                if (command.type.enable_byte > 0) {
+                    payload = payload.slice(1);
+                    // handle enable byte !!
+                }
+
+                if (command?.type.datatype == 'VALS') {
+                    switch (len) {
                         case 1:
                             rawValue = Buffer.from(payload).readInt8();
                             break;
@@ -220,26 +299,29 @@ class BSB {
                     value = (rawValue / command.type.factor).toFixed(command.type.precision) + command.type.unit;
                 }
 
-                if (command?.type.datatype == 'ENUM')
-                {
+                if (command?.type.datatype == 'ENUM') {
                     if (payload.length == 1)
                         payload.unshift(0);
 
-                    if (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || 'VOLTAGEONOFF')
-                    {
-                        payload[1] = payload[1] & 0x01;
-                    }
-                    
                     let enumKey = '0x' + this.toHexString(payload);
                     value = command.enum[enumKey];
+
+                    if (!value &&  (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
+                        // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
+                        payload[1] = payload[1] & 0x01;
+
+                        enumKey = '0x' + this.toHexString(payload);
+                        value = command.enum[enumKey];
+                    }
+
                     if (!value)
-                        console.log('ENUM   '+payload+' - '+ enumKey +' ',command.enum);
+                        console.log(`ENUM   ${payload} - ${enumKey} `, command.enum);
                 }
                 //console.log('***' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
         }
 
-        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' '+ command?.description+' ('+command?.parameter+') = '+value);
+        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + command?.description + ' (' + command?.parameter + ') = ' + value);
 
     }
 
@@ -252,7 +334,7 @@ class BSB {
             if ((pos < this.buffer.length - 4) && (this.buffer[pos] == 0xDC)) {
                 let len = this.buffer[pos + 3];
 
-                if (pos < this.buffer.length - len+1) {
+                if (pos < this.buffer.length - len + 1) {
                     let newmessage = this.buffer.slice(pos, pos + len);
                     let dst = this.buffer[1];
 
@@ -273,7 +355,7 @@ class BSB {
 
                     // todo if pos <> 0, send message with
                     // unprocessed data
-                   
+
                     this.buffer = this.buffer.slice(pos + len);
 
                     pos = -1;
