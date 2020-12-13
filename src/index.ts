@@ -205,7 +205,7 @@ class BSB {
 
     private parseMessage(msg: RAWMessage) {
 
-        if (msg.typ == MSG_TYPE.QUR) {
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET) {
             let swap = msg.cmd[0];
             msg.cmd[0] = msg.cmd[1];
             msg.cmd[1] = swap;
@@ -216,10 +216,12 @@ class BSB {
 
         let value: string | object | [] = '';
 
-        if (msg.typ == MSG_TYPE.ANS) {
-            if (command?.parameter == 634) {
-              //  debugger;
-            }
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET)
+        {
+           value = '0x' + this.toHexString(msg.payload);
+        }
+
+        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
 
             if (command?.type.name == 'DATETIME') {
                 value = 'dateTIME'
