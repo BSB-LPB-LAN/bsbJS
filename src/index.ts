@@ -1,6 +1,7 @@
 import * as net from "net";
 import * as fs from "fs";
 
+import { BSBDefinition, Command, TranslateItem } from "./interfaces";
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -61,79 +62,51 @@ interface RAWMessage {
     crc: number[];
     payload: number[];
 }
-interface Category {
-    name: string;
-    min: number;
-    max: number;
-}
 
-interface Type {
-    name: string;
-    unit: string;
-    datatype: string;
-    factor: number;
-    precision: number;
-    enable_byte: number;
-    payload_length: number;
-}
 
-interface Device {
-    family: number;
-    var: number;
-}
-
-interface ConfigItemEnum {
-    [key: string]: string
-}
-
-interface ConfigItem {
-    command: string;
-    category: Category;
-    type: Type;
-    parameter: number;
-    description: string;
-    enum: ConfigItemEnum;
-    flag: number;
-    device: Device;
-}
 
 interface CmdMap {
-    [key: string]: ConfigItem[];
+    [key: string]: Command[];
 }
 
 //#endregion
 class Definition {
 
-    private config: ConfigItem[];
+    private config: BSBDefinition;
 
     private mapCmds: CmdMap = {};
 
     constructor(config: any) {
         this.config = config;
 
-        for (let item of this.config) {
-            let map = this.mapCmds[item.command];
-            if (!this.mapCmds[item.command])
-                this.mapCmds[item.command] = [];
+        for (let catKEY in this.config.categories) {
+            let cat = this.config.categories[catKEY];
+            for (let item of cat.commands) {
+                let map = this.mapCmds[item.command];
+                if (!this.mapCmds[item.command])
+                    this.mapCmds[item.command] = [];
 
-            this.mapCmds[item.command].push(item);
+                this.mapCmds[item.command].push(item);
+            }
         }
     }
 
-    private findCMDs(cmd: string, dev_family: number, dev_variant: number): ConfigItem | null {
+    private findCMDs(cmd: string, dev_family: number, dev_variant: number): Command | null {
         let item = this.mapCmds[cmd];
         if (item)
             for (let entry of item) {
-                if ((entry.device.family == dev_family)
-                    && (entry.device.var == dev_variant))
-                    return entry;
+                for (let device of entry.device) {
+                    if ((device.family == dev_family)
+                        && (device.var == dev_variant))
+                        return entry;
+                }
             }
         return null;
     }
 
-    public findCMD(cmd: string, dev_family: number, dev_variant: number): ConfigItem | null {
+    public findCMD(cmd: string, dev_family: number, dev_variant: number): Command | null {
 
-        let result: ConfigItem | null = null;
+        let result: Command | null = null;
 
         // search for exact match of family and variant
         result = this.findCMDs(cmd, dev_family, dev_variant);
@@ -164,12 +137,37 @@ class BSB {
 
     private buffer: number[] = [];
 
+    private getLanguage(langRessource: TranslateItem | undefined , lang: string = "KEY"): string | null {
+
+        if (!langRessource)
+            return null;
+
+        let lookup = langRessource as any;
+
+        if (lookup.hasOwnProperty(lang)) {
+            return lookup[lang];
+        }
+
+        if (lookup.hasOwnProperty("EN")) {
+            return lookup[lang];
+        }
+
+        if (lookup.hasOwnProperty("DE")) {
+            return lookup[lang];
+        }
+        
+        if (lookup.hasOwnProperty("KEY")) {
+            return lookup[lang];
+        }
+
+        return null;
+    }
+
     private toHexString(byteArray: number[]): string {
         return Array.from(byteArray, function (byte) {
             return ('0' + (byte & 0xFF).toString(16)).slice(-2);
         }).join('').toUpperCase();
     }
-
 
     private calcCRC(data: string): any {
         function crc16(crc16: number, item: number): number {
@@ -200,7 +198,7 @@ class BSB {
         if (byteArray.length != 2)
             return '--:--';
 
-        return byteArray[0].toString().padStart(2,'0') +':'+ byteArray[1].toString().padStart(2,'0');
+        return byteArray[0].toString().padStart(2, '0') + ':' + byteArray[1].toString().padStart(2, '0');
     }
 
     private parseMessage(msg: RAWMessage) {
@@ -214,29 +212,27 @@ class BSB {
         let cmd = '0x' + this.toHexString(msg.cmd);
         let command = this.definition.findCMD(cmd, 163, 5);
 
-        let value: string | object | [] = '';
+        let value: string | object | [] | null = '';
 
-        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET)
-        {
-           value = '0x' + this.toHexString(msg.payload);
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
+            value = '0x' + this.toHexString(msg.payload);
         }
 
-        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
+        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
 
             if (command?.type.name == 'DATETIME') {
                 value = 'dateTIME'
                 let payload = msg.payload;
-                value =     payload[5].toString().padStart(2,'0')+':'+payload[6].toString().padStart(2,'0')+':'+payload[7].toString().padStart(2,'0')+' '
-                    +payload[3].toString().padStart(2,'0') +'.'+ payload[2].toString().padStart(2,'0')+'.'+(1900+payload[1]).toString().padStart(2,'0');
+                value = payload[5].toString().padStart(2, '0') + ':' + payload[6].toString().padStart(2, '0') + ':' + payload[7].toString().padStart(2, '0') + ' '
+                    + payload[3].toString().padStart(2, '0') + '.' + payload[2].toString().padStart(2, '0') + '.' + (1900 + payload[1]).toString().padStart(2, '0');
             }
 
-            if (command?.type.name == 'VACATIONPROG' || command?.type.name=='SUMMERPERIOD')
-            {
+            if (command?.type.name == 'VACATIONPROG' || command?.type.name == 'SUMMERPERIOD') {
                 let payload = msg.payload;
                 if ((payload[0] & 0x01) != 0x01) {
-                    value = payload[3].toString().padStart(2,'0') +'.'+ payload[2].toString().padStart(2,'0')+'.';
+                    value = payload[3].toString().padStart(2, '0') + '.' + payload[2].toString().padStart(2, '0') + '.';
                 }
-                else 
+                else
                     value = '---';
             }
 
@@ -253,7 +249,7 @@ class BSB {
                         values.push({
                             "start": start,
                             "end": end,
-                            toString : ()=> start+'-'+end
+                            toString: () => start + '-' + end
                         });
                     }
                 }
@@ -298,7 +294,7 @@ class BSB {
                             rawValue = Buffer.from(payload).readInt32BE();
                             break;
                     }
-                    value = (rawValue / command.type.factor).toFixed(command.type.precision) + command.type.unit;
+                    value = (rawValue / command.type.factor).toFixed(command.type.precision) + this.getLanguage(command.type.unit, "DE") ; ;
                 }
 
                 if (command?.type.datatype == 'ENUM') {
@@ -306,14 +302,14 @@ class BSB {
                         payload.unshift(0);
 
                     let enumKey = '0x' + this.toHexString(payload);
-                    value = command.enum[enumKey];
+                    value =  this.getLanguage(command.enum[enumKey], "DE") ;
 
-                    if (!value &&  (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
+                    if (!value && (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
                         // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
                         payload[1] = payload[1] & 0x01;
 
                         enumKey = '0x' + this.toHexString(payload);
-                        value = command.enum[enumKey];
+                        value =  this.getLanguage(command.enum[enumKey], "DE") ;
                     }
 
                     if (!value)
@@ -323,7 +319,7 @@ class BSB {
             }
         }
 
-        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + command?.description + ' (' + command?.parameter + ') = ' + value);
+        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description, "DE") + ' (' + command?.parameter + ') = ' + value);
 
     }
 
@@ -385,7 +381,7 @@ class BSB {
 
 }
 
-let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/output.json');
+let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json');
 let config = JSON.parse(rawdata as any);
 let definition = new Definition(config);
 
