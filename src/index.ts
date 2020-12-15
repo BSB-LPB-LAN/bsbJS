@@ -1,7 +1,10 @@
 import * as net from "net";
 import * as fs from "fs";
+import { Observable, Subject, Subscriber } from 'rxjs';
+import { filter, map } from 'rxjs/operators';
 
-import { BSBDefinition, Command, TranslateItem } from "./interfaces";
+import { BSBDefinition, Command, TranslateItem, Device } from "./interfaces";
+import { SSL_OP_MICROSOFT_BIG_SSLV3_BUFFER } from "constants";
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -104,16 +107,16 @@ class Definition {
         return null;
     }
 
-    public findCMD(cmd: string, dev_family: number, dev_variant: number): Command | null {
+    public findCMD(cmd: string, device: Device): Command | null {
 
         let result: Command | null = null;
 
         // search for exact match of family and variant
-        result = this.findCMDs(cmd, dev_family, dev_variant);
+        result = this.findCMDs(cmd, device.family, device.var);
         if (result) return result;
 
         // search for exact match of family
-        result = this.findCMDs(cmd, dev_family, 255);
+        result = this.findCMDs(cmd, device.family, 255);
         if (result) return result;
 
         // search for exact 255,255
@@ -125,39 +128,51 @@ class Definition {
 
 }
 
-class BSB {
+class BSB  {
 
-
-    constructor(definition: Definition) {
+    constructor(definition: Definition, device: Device,language:string ) {
+   
         this.definition = definition;
+        this.device = device;
+        this.language = language;
+
+       this.log$ = new Subject(); 
+       this.Log$ = this.log$.asObservable();
     }
+
+    public Log$: Observable<any>;
+    private log$: Subject<any>;
 
     private definition: Definition;
     private client = new net.Socket();
 
     private buffer: number[] = [];
 
-    private getLanguage(langRessource: TranslateItem | undefined , lang: string = "KEY"): string | null {
+    private language:string;
+
+    private device: Device;
+
+    private getLanguage(langRessource: TranslateItem | undefined): string | null {
 
         if (!langRessource)
             return null;
 
         let lookup = langRessource as any;
 
-        if (lookup.hasOwnProperty(lang)) {
-            return lookup[lang];
+        if (lookup.hasOwnProperty(this.language)) {
+            return lookup[this.language];
         }
 
         if (lookup.hasOwnProperty("EN")) {
-            return lookup[lang];
+            return lookup[this.language];
         }
 
         if (lookup.hasOwnProperty("DE")) {
-            return lookup[lang];
+            return lookup[this.language];
         }
-        
+
         if (lookup.hasOwnProperty("KEY")) {
-            return lookup[lang];
+            return lookup[this.language];
         }
 
         return null;
@@ -169,7 +184,7 @@ class BSB {
         }).join('').toUpperCase();
     }
 
-    private calcCRC(data: string): any {
+    private calcCRC(data: number[]): any {
         function crc16(crc16: number, item: number): number {
 
             crc16 = crc16 ^ (item << 8);
@@ -187,10 +202,13 @@ class BSB {
         let crc: number = 0;
 
         for (let i = 0; i < data.length; i++) {
-            crc = crc16(crc, data.charCodeAt(i));
+            crc = crc16(crc, data[i]);
         }
 
-        return crc;
+        let result = [0, 0];
+        result[0] = (crc >> 8) & 0xFF;
+        result[1] = (crc >> 0) & 0xFF;
+        return result;
     }
 
     private toHHMM(byteArray: number[]): string {
@@ -210,12 +228,14 @@ class BSB {
         }
 
         let cmd = '0x' + this.toHexString(msg.cmd);
-        let command = this.definition.findCMD(cmd, 163, 5);
+        let command = this.definition.findCMD(cmd, this.device);
 
-        let value: string | object | [] | null = '';
+        let value: string | object | [] | null = null
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
-            value = '0x' + this.toHexString(msg.payload);
+            value = this.toHexString(msg.payload);
+            if (value.length > 0)
+                value = 'Payload: 0x' + value;
         }
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
@@ -233,7 +253,7 @@ class BSB {
                     value = payload[3].toString().padStart(2, '0') + '.' + payload[2].toString().padStart(2, '0') + '.';
                 }
                 else
-                    value = '---';
+                    value = null;
             }
 
             if (command?.type.name == 'TIMEPROG') {
@@ -277,49 +297,57 @@ class BSB {
                         len = payload.length - (command.type.enable_byte == 0 ? 0 : 1);
                 }
 
+                let enabled = true;
                 if (command.type.enable_byte > 0) {
+
+                    if ((payload[0] & 0x01) == 0x01)
+                        enabled = false;
+
                     payload = payload.slice(1);
-                    // handle enable byte !!
                 }
 
-                if (command?.type.datatype == 'VALS') {
-                    switch (len) {
-                        case 1:
-                            rawValue = Buffer.from(payload).readInt8();
-                            break;
-                        case 2:
-                            rawValue = Buffer.from(payload).readInt16BE();
-                            break;
-                        case 4:
-                            rawValue = Buffer.from(payload).readInt32BE();
-                            break;
-                    }
-                    value = (rawValue / command.type.factor).toFixed(command.type.precision) + this.getLanguage(command.type.unit, "DE") ; ;
-                }
+                if (enabled) {
 
-                if (command?.type.datatype == 'ENUM') {
-                    if (payload.length == 1)
-                        payload.unshift(0);
-
-                    let enumKey = '0x' + this.toHexString(payload);
-                    value =  this.getLanguage(command.enum[enumKey], "DE") ;
-
-                    if (!value && (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
-                        // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
-                        payload[1] = payload[1] & 0x01;
-
-                        enumKey = '0x' + this.toHexString(payload);
-                        value =  this.getLanguage(command.enum[enumKey], "DE") ;
+                    if (command?.type.datatype == 'VALS') {
+                        switch (len) {
+                            case 1:
+                                rawValue = Buffer.from(payload).readInt8();
+                                break;
+                            case 2:
+                                rawValue = Buffer.from(payload).readInt16BE();
+                                break;
+                            case 4:
+                                rawValue = Buffer.from(payload).readInt32BE();
+                                break;
+                        }
+                        value = (rawValue / command.type.factor).toFixed(command.type.precision) + this.getLanguage(command.type.unit);;
                     }
 
-                    if (!value)
-                        console.log(`ENUM   ${payload} - ${enumKey} `, command.enum);
+                    if (command?.type.datatype == 'ENUM') {
+                        if (payload.length == 1)
+                            payload.unshift(0);
+
+                        let enumKey = '0x' + this.toHexString(payload);
+                        value = this.getLanguage(command.enum[enumKey]);
+
+                        if (!value && (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
+                            // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
+                            payload[1] = payload[1] & 0x01;
+
+                            enumKey = '0x' + this.toHexString(payload);
+                            value = this.getLanguage(command.enum[enumKey]);
+                        }
+
+                        if (!value)
+                            console.log(`ENUM   ${payload} - ${enumKey} `, command.enum);
+                    }
                 }
-                //console.log('***' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
+                //console.log('********' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
         }
-
-        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description, "DE") + ' (' + command?.parameter + ') = ' + value);
+        this.log$.next(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
+        console.log('********' + this.toHexString(msg.data));
+        console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
 
     }
 
@@ -334,29 +362,33 @@ class BSB {
 
                 if (pos < this.buffer.length - len + 1) {
                     let newmessage = this.buffer.slice(pos, pos + len);
-                    let dst = this.buffer[1];
 
-                    //let testcrc = this.calcCRC(newmessage.slice(0,newmessage.length-2));
+                    let crc = this.toHexString(newmessage.slice(newmessage.length - 2));
+                    let crcCalculated = this.toHexString(this.calcCRC(newmessage.slice(0, newmessage.length - 2)));
 
-                    let msg = {
-                        data: newmessage,
-                        src: newmessage[1] & 0x7F,
-                        dst: newmessage[2],
-                        typ: newmessage[4],
-                        cmd: newmessage.slice(5, 9),
-                        crc: newmessage.slice(newmessage.length - 2),
-                        //testcrc: testcrc,
-                        payload: newmessage.slice(9, newmessage.length - 2)
-                    };
-                    //  console.log(msg);
-                    this.parseMessage(msg);
+                    if (crc == crcCalculated) {
+                        let msg = {
+                            data: newmessage,
+                            src: newmessage[1] & 0x7F,
+                            dst: newmessage[2],
+                            typ: newmessage[4],
+                            cmd: newmessage.slice(5, 9),
+                            crc: newmessage.slice(newmessage.length - 2),
+                            payload: newmessage.slice(9, newmessage.length - 2)
+                        };
+                        this.parseMessage(msg as any);
 
-                    // todo if pos <> 0, send message with
-                    // unprocessed data
+                        // todo if pos <> 0, send message with
+                        // unprocessed data
 
-                    this.buffer = this.buffer.slice(pos + len);
+                        this.buffer = this.buffer.slice(pos + len);
 
-                    pos = -1;
+                        pos = -1;
+                    }
+                    else
+                    {
+                        // wrong CRC ??
+                    }
                 }
             }
             pos++;
@@ -385,8 +417,30 @@ let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json');
 let config = JSON.parse(rawdata as any);
 let definition = new Definition(config);
 
-let bsb = new BSB(definition);
+let bsb = new BSB(definition, { family: 163, var: 5}, "DE");
 bsb.connect('192.168.203.179', 1000);
+
+// bsb.set("Temp=22°")
+//     -> Error
+//     -> okay
+
+// bsb.inf("Temp=22°")
+//     -> Error
+//     -> okay
+
+// bsb.get("Temp?")
+//     -> Error
+//     -> okay result Temp=21!
+
+let nm =   bsb.Log$.subscribe((data)=> {
+    console.log("RXJS:"+ data);
+});
+
+// bsb.Log$.pipe(filter(data => data == true), map()).subscribe()
+
+setTimeout(() => nm.unsubscribe(), 10000);
+
+
 
 
 // {
