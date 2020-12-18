@@ -128,16 +128,16 @@ class Definition {
 
 }
 
-class BSB  {
+class BSB {
 
-    constructor(definition: Definition, device: Device,language:string ) {
-   
+    constructor(definition: Definition, device: Device, language: string) {
+
         this.definition = definition;
         this.device = device;
         this.language = language;
 
-       this.log$ = new Subject(); 
-       this.Log$ = this.log$.asObservable();
+        this.log$ = new Subject();
+        this.Log$ = this.log$.asObservable();
     }
 
     public Log$: Observable<any>;
@@ -148,7 +148,7 @@ class BSB  {
 
     private buffer: number[] = [];
 
-    private language:string;
+    private language: string;
 
     private device: Device;
 
@@ -385,14 +385,27 @@ class BSB  {
 
                         pos = -1;
                     }
-                    else
-                    {
+                    else {
                         // wrong CRC ??
                     }
                 }
             }
             pos++;
         }
+    }
+
+    public send() {
+        var buf = Buffer.from("DCC2000B063D2D05749C4B", "hex");
+        for (let i = 0; i < buf.length; i++)
+            buf[i] = (~buf[i]) & 0xFF;
+
+        let arr = new Uint8Array(buf.length);
+
+        buf.copy(arr);
+
+
+
+        this.client.write(arr);
     }
 
     public connect(ip: string, port: number) {
@@ -417,8 +430,12 @@ let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json');
 let config = JSON.parse(rawdata as any);
 let definition = new Definition(config);
 
-let bsb = new BSB(definition, { family: 163, var: 5}, "DE");
+let bsb = new BSB(definition, { family: 163, var: 5 }, "DE");
 bsb.connect('192.168.203.179', 1000);
+
+setInterval(() => {
+    bsb.send();
+}, 5000);
 
 // bsb.set("Temp=22°")
 //     -> Error
@@ -432,8 +449,8 @@ bsb.connect('192.168.203.179', 1000);
 //     -> Error
 //     -> okay result Temp=21!
 
-let nm =   bsb.Log$.subscribe((data)=> {
-    console.log("RXJS:"+ data);
+let nm = bsb.Log$.subscribe((data) => {
+    console.log("RXJS:" + data);
 });
 
 // bsb.Log$.pipe(filter(data => data == true), map()).subscribe()
