@@ -71,5 +71,5 @@ export declare class BSB {
     private parseBuffer;
     connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
-    get(cmd: number, dst?: number): Promise<any>;
+    get(param: number, dst?: number): Promise<any>;
 }

@@ -453,29 +453,45 @@ export class BSB {
         });
     }
 
-    public get(cmd: number, dst: number = 0x00): Promise<any> {
+    public get(param: number, dst: number = 0x00): Promise<any> {
         //"parameter": 700,
 
         //"0x 2D 3D 05 74",
         //"DC C2 00 0B 06 3D 2D 05 74 9C4B"
 
-        var buf = Buffer.from("DCC2000B063D2D05749C4B", "hex");
-        for (let i = 0; i < buf.length; i++)
-            buf[i] = (~buf[i]) & 0xFF;
+        const command = this.definition.findParam(param, this.device)
 
-        let arr = new Uint8Array(buf.length);
+        if (command)
+        {
+            let data = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"),0)
 
-        buf.copy(arr);
+            const swap = data[0]
+            data[0] = data [1]
+            data[1] = swap
 
-        return new Promise<any>((done, error) => {
-            this.openRequests.push({
-                parameter: 700,
-                data: Array.from(arr),
-                done: done,
-                error: error
+            const src = 0xC2
+            const len = 0x0B
+            data = [ 0xDC, src, dst, len, MSG_TYPE.QUR, ...data]
+            data = [...data, ...this.calcCRC(data) ]
+
+            //var buf = Buffer.from("DCC2000B063D2D05749C4B", "hex");            
+            
+            for (let i = 0; i < data.length; i++)
+            data[i] = (~data[i]) & 0xFF;
+    
+            return new Promise<any>((done, error) => {
+                this.openRequests.push({
+                    parameter: 700,
+                    data: data,
+                    done: done,
+                    error: error
+                })
+                // todo move the call of the client write to a timer
+                this.client.write(Uint8Array.
+                    from(data))
             })
-            // todo move the call of the client write to a timer
-            this.client.write(arr)
-        })
+        }
+
+       return new Promise((done)=> { done(null) })
     }
 }

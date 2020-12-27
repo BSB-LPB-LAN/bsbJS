@@ -12,9 +12,11 @@ bsb.connect('192.168.203.179', 1000)
 
 const app = express()
 
-app.get('/', (req, res) => {
-    bsb.get(700)
-        .then(data => res.send('Hello World!<pre>\r\n'+JSON.stringify(data,null,2)))
+app.get('/JQ=:query', (req, res) => {
+
+    const parameter = parseInt(req.params.query,10)
+    bsb.get(parameter)
+        .then(data => res.send('Parameter!'+parameter+'<pre>\r\n'+JSON.stringify(data,null,2)))
 })
 
 app.listen(8081, () => {
