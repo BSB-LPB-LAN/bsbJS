@@ -255,7 +255,8 @@ export class BSB {
         let cmd = '0x' + this.toHexString(msg.cmd);
         let command = this.definition.findCMD(cmd, this.device);
 
-        let value: string | object | [] | null = null
+        let value: string | object | [] | null | number = null
+        let rawValue: number | null = null;
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
             value = this.toHexString(msg.payload);
@@ -304,10 +305,9 @@ export class BSB {
 
             if (command?.type.datatype == 'VALS' || command?.type.datatype == 'ENUM') {
 
-
-                let rawValue = 0;
                 let payload = msg.payload;
                 let len = command.type.payload_length & 31;
+                rawValue = 0
 
                 // WORKAROUND: no length is defined from the command table
                 if (command?.type.datatype == 'VALS') {
@@ -370,13 +370,21 @@ export class BSB {
                 //console.log('********' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
         }
-        if (msg.typ == MSG_TYPE.ANS) {
+        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
             if (this.openRequests.length > 0) {
                 let req = this.openRequests.shift();
 
+                // let desc = ""
+                // if (!rawValue) {
+                //     desc = value as string
+                //     value = rawValue
+                // }
+
                 req?.done({
+                    msg: msg,
                     command: command,
-                    value: value
+                    value: value,
+                    desc: ''
                 })
             }
         }
@@ -452,26 +460,6 @@ export class BSB {
         });
     }
 
-    private async getArray(param: number[], dst: number)
-    {
-        let result: any = {} 
-        for (let item of param)
-        {
-            const res = await this.getOne(item, dst) as { command: Command, value: any };
-            console.log('---------'+res.command.parameter)
-            result[res.command.parameter] = {
-                name:  this.getLanguage(res.command.description),
-                error: 0,
-                value: res.value, // add pure value number
-                desc: res.value,
-                dataType: 1,
-                readonly: (res.command.flags?.indexOf('READONLY') != -1) ?? 0,
-                unit: this.getLanguage(res.command.type.unit)
-            }
-        }
-        return result
-    }
-
     private getOne(param: number, dst: number = 0x00): Promise<any> {
         const command = this.definition.findParam(param, this.device)
 
@@ -502,14 +490,30 @@ export class BSB {
             })
         }
 
-        return new Promise((done) => { done({}) })
+        return new Promise((done) => { done(null) })
     }
 
-    public get(param: number | number[], dst: number = 0x00): Promise<any> {
+    public async get(param: number | number[], dst: number = 0x00): Promise<any> {
         if (!Array.isArray(param)) {
             param = [param]
         }
 
-        return this.getArray(param, dst)
+        let result: any = {}
+        for (let item of param) {
+            const res = await this.getOne(item, dst) as { command: Command, value: any };
+
+            if (res) {
+                result[res.command.parameter] = {
+                    name: this.getLanguage(res.command.description),
+                    error: 0,
+                    value: res.value?.toString(), // add pure value number
+                    desc: '',
+                    dataType: 1,
+                    readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
+                    unit: this.getLanguage(res.command.type.unit)
+                }
+            }
+        }
+        return result
     }
 }
