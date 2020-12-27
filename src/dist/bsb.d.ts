@@ -1,5 +1,7 @@
+/// <reference types="node" />
 import { Command, Device } from "./interfaces";
 import { Observable } from "rxjs";
+import * as stream from "stream";
 export declare enum MSG_TYPE {
     /** request info telegram */
     QINF = 1,
@@ -44,12 +46,15 @@ export interface RAWMessage {
 export declare class Definition {
     private config;
     private mapCmds;
+    private mapParams;
     constructor(config: any);
-    private findCMDs;
+    private find;
+    private findCMDorParam;
     findCMD(cmd: string, device: Device): Command | null;
+    findParam(param: number, device: Device): Command | null;
 }
 export declare class BSB {
-    constructor(definition: Definition, device: Device, language: string);
+    constructor(definition: Definition, device: Device, language?: string);
     Log$: Observable<any>;
     private log$;
     private definition;
@@ -57,12 +62,14 @@ export declare class BSB {
     private buffer;
     private language;
     private device;
+    private openRequests;
     private getLanguage;
     private toHexString;
     private calcCRC;
     private toHHMM;
     private parseMessage;
     private parseBuffer;
-    send(): void;
+    connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
+    get(cmd: number, dst?: number): Promise<any>;
 }

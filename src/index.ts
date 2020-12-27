@@ -13,8 +13,8 @@ bsb.connect('192.168.203.179', 1000)
 const app = express()
 
 app.get('/', (req, res) => {
-    bsb.send()
-    res.send('Hello World!')
+    bsb.get(700)
+        .then(data => res.send('Hello World!<pre>\r\n'+JSON.stringify(data,null,2)))
 })
 
 app.listen(8081, () => {

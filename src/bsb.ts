@@ -75,6 +75,7 @@ export class Definition {
     private config: BSBDefinition;
 
     private mapCmds: CmdMap = {};
+    private mapParams: CmdMap = {};
 
     constructor(config: any) {
         this.config = config;
@@ -87,12 +88,24 @@ export class Definition {
                     this.mapCmds[item.command] = [];
 
                 this.mapCmds[item.command].push(item);
+
+                if (!this.mapParams[item.parameter])
+                    this.mapParams[item.parameter] = [];
+
+                this.mapParams[item.parameter].push(item);
             }
         }
     }
 
-    private findCMDs(cmd: string, dev_family: number, dev_variant: number): Command | null {
-        let item = this.mapCmds[cmd];
+    private find(place: 'Cmd' | 'Param', key: string, dev_family: number, dev_variant: number): Command | null {
+        let item: Command[]
+
+        if (place == 'Cmd') {
+            item = this.mapCmds[key]
+        }
+        else {
+            item = this.mapParams[key]
+        }
         if (item)
             for (let entry of item) {
                 for (let device of entry.device) {
@@ -104,23 +117,31 @@ export class Definition {
         return null;
     }
 
-    public findCMD(cmd: string, device: Device): Command | null {
+    private findCMDorParam(place: 'Cmd' | 'Param', key: string, device: Device): Command | null {
 
         let result: Command | null = null;
 
         // search for exact match of family and variant
-        result = this.findCMDs(cmd, device.family, device.var);
+        result = this.find(place, key, device.family, device.var);
         if (result) return result;
 
         // search for exact match of family
-        result = this.findCMDs(cmd, device.family, 255);
+        result = this.find(place, key, device.family, 255);
         if (result) return result;
 
         // search for exact 255,255
-        result = this.findCMDs(cmd, 255, 255);
+        result = this.find(place, key, 255, 255);
         if (result) return result;
 
         return null;
+    }
+
+    public findCMD(cmd: string, device: Device): Command | null {
+        return this.findCMDorParam('Cmd', cmd, device)
+    }
+
+    public findParam(param: number, device: Device): Command | null {
+        return this.findCMDorParam('Param', param.toString(), device)
     }
 
 }
@@ -140,14 +161,21 @@ export class BSB {
     public Log$: Observable<any>;
     private log$: Subject<any>;
 
-    private definition: Definition;
-    private client: stream.Duplex = new net.Socket();
+    private definition: Definition
+    private client: stream.Duplex = new net.Socket()
 
-    private buffer: number[] = [];
+    private buffer: number[] = []
 
-    private language: string;
+    private language: string
 
-    private device: Device;
+    private device: Device
+
+    private openRequests: {
+        parameter: number;
+        data: number[];
+        done: (value: any) => void;
+        error: (reason?: any) => void;
+    }[] = []
 
     private getLanguage(langRessource: TranslateItem | undefined): string | null {
 
@@ -342,6 +370,17 @@ export class BSB {
                 //console.log('********' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
         }
+        if (msg.typ == MSG_TYPE.ANS) {
+            if (this.openRequests.length > 0) {
+                let req = this.openRequests.shift();
+                req?.done({
+                    cmd: cmd,
+                    name: this.getLanguage(command?.description),
+                    msg: MSG_TYPE[msg.typ],
+                    value: value
+                })
+            }
+        }
         this.log$.next(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
         //    console.log('********' + this.toHexString(msg.data));
         //    console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
@@ -398,22 +437,23 @@ export class BSB {
             this.client = param1
         }
         else {
-            const socket = new net.Socket();
+            const socket = new net.Socket()
 
             socket.connect(param2 ?? 0, param1, () => {
                 console.log('connected');
             });
+            this.client = socket
         }
 
         this.client.on('data', (data) => {
             for (let i = 0; i < data.length; i++) {
-                this.buffer.push(~data[i] & 0xFF);
+                this.buffer.push(~data[i] & 0xFF)
             }
-            this.parseBuffer();
+            this.parseBuffer()
         });
     }
 
-    public async send(cmd: number, value: any, dst: number = 0x00): Promise<any> {
+    public get(cmd: number, dst: number = 0x00): Promise<any> {
         //"parameter": 700,
 
         //"0x 2D 3D 05 74",
@@ -427,7 +467,15 @@ export class BSB {
 
         buf.copy(arr);
 
-        this.client.write(arr);
+        return new Promise<any>((done, error) => {
+            this.openRequests.push({
+                parameter: 700,
+                data: Array.from(arr),
+                done: done,
+                error: error
+            })
+            // todo move the call of the client write to a timer
+            this.client.write(arr)
+        })
     }
-
 }
