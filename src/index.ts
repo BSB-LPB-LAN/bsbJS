@@ -12,11 +12,18 @@ bsb.connect('192.168.203.179', 1000)
 
 const app = express()
 
+app.set('json spaces', 2)
 app.get('/JQ=:query', (req, res) => {
 
-    const parameter = parseInt(req.params.query,10)
-    bsb.get(parameter)
-        .then(data => res.send('Parameter!'+parameter+'<pre>\r\n'+JSON.stringify(data,null,2)))
+
+    let query: number[] | number = req.params.query
+        .split(',')
+        .map(item => parseInt(item, 10))
+
+    if (query.length == 1)
+        query = query[0]
+    bsb.get(query)
+        .then(data => res.json(data))
 })
 
 app.listen(8081, () => {

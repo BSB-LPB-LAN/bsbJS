@@ -373,10 +373,9 @@ export class BSB {
         if (msg.typ == MSG_TYPE.ANS) {
             if (this.openRequests.length > 0) {
                 let req = this.openRequests.shift();
+
                 req?.done({
-                    cmd: cmd,
-                    name: this.getLanguage(command?.description),
-                    msg: MSG_TYPE[msg.typ],
+                    command: command,
                     value: value
                 })
             }
@@ -453,45 +452,64 @@ export class BSB {
         });
     }
 
-    public get(param: number, dst: number = 0x00): Promise<any> {
-        //"parameter": 700,
+    private async getArray(param: number[], dst: number)
+    {
+        let result: any = {} 
+        for (let item of param)
+        {
+            const res = await this.getOne(item, dst) as { command: Command, value: any };
+            console.log('---------'+res.command.parameter)
+            result[res.command.parameter] = {
+                name:  this.getLanguage(res.command.description),
+                error: 0,
+                value: res.value, // add pure value number
+                desc: res.value,
+                dataType: 1,
+                readonly: (res.command.flags?.indexOf('READONLY') != -1) ?? 0,
+                unit: this.getLanguage(res.command.type.unit)
+            }
+        }
+        return result
+    }
 
-        //"0x 2D 3D 05 74",
-        //"DC C2 00 0B 06 3D 2D 05 74 9C4B"
-
+    private getOne(param: number, dst: number = 0x00): Promise<any> {
         const command = this.definition.findParam(param, this.device)
 
-        if (command)
-        {
-            let data = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"),0)
+        if (command) {
+            let data = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
 
             const swap = data[0]
-            data[0] = data [1]
+            data[0] = data[1]
             data[1] = swap
 
             const src = 0xC2
             const len = 0x0B
-            data = [ 0xDC, src, dst, len, MSG_TYPE.QUR, ...data]
-            data = [...data, ...this.calcCRC(data) ]
+            data = [0xDC, src, dst, len, MSG_TYPE.QUR, ...data]
+            data = [...data, ...this.calcCRC(data)]
 
-            //var buf = Buffer.from("DCC2000B063D2D05749C4B", "hex");            
-            
             for (let i = 0; i < data.length; i++)
-            data[i] = (~data[i]) & 0xFF;
-    
+                data[i] = (~data[i]) & 0xFF;
+
             return new Promise<any>((done, error) => {
                 this.openRequests.push({
-                    parameter: 700,
+                    parameter: param,
                     data: data,
                     done: done,
                     error: error
                 })
                 // todo move the call of the client write to a timer
-                this.client.write(Uint8Array.
-                    from(data))
+                this.client.write(Uint8Array.from(data))
             })
         }
 
-       return new Promise((done)=> { done(null) })
+        return new Promise((done) => { done({}) })
+    }
+
+    public get(param: number | number[], dst: number = 0x00): Promise<any> {
+        if (!Array.isArray(param)) {
+            param = [param]
+        }
+
+        return this.getArray(param, dst)
     }
 }
