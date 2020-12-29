@@ -54,7 +54,7 @@ export declare class Definition {
     findParam(param: number, device: Device): Command | null;
 }
 export declare class BSB {
-    constructor(definition: Definition, device: Device, language?: string);
+    constructor(definition: Definition, device: Device, src?: number, language?: string);
     Log$: Observable<any>;
     private log$;
     private definition;
@@ -62,6 +62,7 @@ export declare class BSB {
     private buffer;
     private language;
     private device;
+    private src;
     private openRequests;
     private getLanguage;
     private toHexString;

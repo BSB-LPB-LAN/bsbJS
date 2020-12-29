@@ -40,6 +40,7 @@ export interface Type {
     name:           string;
     unit:           TranslateItem;
     datatype:       string;
+    datatype_id:    number;
     factor:         number;
     payload_length: number;
     precision:      number;

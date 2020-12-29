@@ -148,11 +148,12 @@ export class Definition {
 
 export class BSB {
 
-    constructor(definition: Definition, device: Device, language: string = "KEY") {
+    constructor(definition: Definition, device: Device, src: number = 0xC2, language: string = "KEY") {
 
         this.definition = definition;
         this.device = device;
         this.language = language;
+        this.src = src;
 
         this.log$ = new Subject();
         this.Log$ = this.log$.asObservable();
@@ -169,6 +170,8 @@ export class BSB {
     private language: string
 
     private device: Device
+
+    private src: number
 
     private openRequests: {
         parameter: number;
@@ -257,6 +260,7 @@ export class BSB {
 
         let value: string | object | [] | null | number = null
         let rawValue: number | null = null;
+        let enumvalue: number | null = null
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
             value = this.toHexString(msg.payload);
@@ -269,8 +273,10 @@ export class BSB {
             if (command?.type.name == 'DATETIME') {
                 value = 'dateTIME'
                 let payload = msg.payload;
-                value = payload[5].toString().padStart(2, '0') + ':' + payload[6].toString().padStart(2, '0') + ':' + payload[7].toString().padStart(2, '0') + ' '
-                    + payload[3].toString().padStart(2, '0') + '.' + payload[2].toString().padStart(2, '0') + '.' + (1900 + payload[1]).toString().padStart(2, '0');
+                value = payload[3].toString().padStart(2, '0') + '.'
+                    + payload[2].toString().padStart(2, '0') + '.'
+                    + (1900 + payload[1]).toString().padStart(2, '0') + ' '
+                    + payload[5].toString().padStart(2, '0') + ':' + payload[6].toString().padStart(2, '0') + ':' + payload[7].toString().padStart(2, '0')
             }
 
             if (command?.type.name == 'VACATIONPROG' || command?.type.name == 'SUMMERPERIOD') {
@@ -295,8 +301,25 @@ export class BSB {
                         values.push({
                             "start": start,
                             "end": end,
-                            toString: () => start + '-' + end
+                            toString: () => (start ?? '--:--') + ' - ' + (end ?? '--:--')
                         });
+                    }
+                    values.toString = function () {
+                        let result = ''
+                        let val = this;
+
+                        for (let i = 0; i < 3; i++) {
+                            if (i > 0)
+                                result += ' '
+                            result += (i+1) + '. '
+                            if (i < val.length) {
+                                result += val[i].toString()
+                            } else {
+                                result += '--:-- - --:--'
+                            }
+                        }
+
+                        return result
                     }
                 }
 
@@ -345,7 +368,7 @@ export class BSB {
                                 rawValue = Buffer.from(payload).readInt32BE();
                                 break;
                         }
-                        value = (rawValue / command.type.factor).toFixed(command.type.precision) + this.getLanguage(command.type.unit);;
+                        value = (rawValue / command.type.factor).toFixed(command.type.precision)
                     }
 
                     if (command?.type.datatype == 'ENUM') {
@@ -354,6 +377,8 @@ export class BSB {
 
                         let enumKey = '0x' + this.toHexString(payload);
                         value = this.getLanguage(command.enum[enumKey]);
+
+                        enumvalue = payload[1]
 
                         if (!value && (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
                             // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
@@ -384,11 +409,15 @@ export class BSB {
                     msg: msg,
                     command: command,
                     value: value,
+                    enumvalue: enumvalue,
                     desc: ''
                 })
             }
         }
-        this.log$.next(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
+        this.log$.next(MSG_TYPE[msg.typ] + ' '
+            + this.toHexString([msg.src])
+            + ' -> ' + this.toHexString([msg.dst])
+            + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
         //    console.log('********' + this.toHexString(msg.data));
         //    console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
 
@@ -470,9 +499,8 @@ export class BSB {
             data[0] = data[1]
             data[1] = swap
 
-            const src = 0xC2
             const len = 0x0B
-            data = [0xDC, src, dst, len, MSG_TYPE.QUR, ...data]
+            data = [0xDC, this.src, dst, len, MSG_TYPE.QUR, ...data]
             data = [...data, ...this.calcCRC(data)]
 
             for (let i = 0; i < data.length; i++)
@@ -500,15 +528,23 @@ export class BSB {
 
         let result: any = {}
         for (let item of param) {
-            const res = await this.getOne(item, dst) as { command: Command, value: any };
+            const res = await this.getOne(item, dst) as { command: Command, value: any, enumvalue: any, msg: RAWMessage };
 
             if (res) {
+                if (!res.value)
+                    res.value = ""
+
+                let desc = ''
+                if (res.command.type.datatype == "ENUM") {
+                    desc = res.value?.toString()
+                    res.value = res.enumvalue
+                }
                 result[res.command.parameter] = {
                     name: this.getLanguage(res.command.description),
-                    error: 0,
-                    value: res.value?.toString(), // add pure value number
-                    desc: '',
-                    dataType: 1,
+                    error: res.msg.typ == MSG_TYPE.ERR ? res.msg.payload[0] : 0,
+                    value: res.msg.typ == MSG_TYPE.ERR ? "" : res.value?.toString(), // add pure value number
+                    desc: desc,
+                    dataType: res.command.type.datatype_id,
                     readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
                     unit: this.getLanguage(res.command.type.unit)
                 }

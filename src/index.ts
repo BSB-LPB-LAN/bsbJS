@@ -7,24 +7,30 @@ let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json')
 let config = JSON.parse(rawdata as any)
 let definition = new Definition(config)
 
-let bsb = new BSB(definition, { family: 163, var: 5 }, "DE")
+let bsb = new BSB(definition, { family: 163, var: 5 }, 0xC3, "DE")
 bsb.connect('192.168.203.179', 1000)
 
 const app = express()
 
 app.set('json spaces', 2)
+
+// app.post('/JQ') -> paramter from body
 app.get('/JQ=:query', (req, res) => {
-
-
-    let query: number[] | number = req.params.query
+    let query = req.params.query
         .split(',')
         .map(item => parseInt(item, 10))
 
-    if (query.length == 1)
-        query = query[0]
     bsb.get(query)
         .then(data => res.json(data))
 })
+
+app.get('/JK=:query', (req, res) => {
+    res.send('get K')
+})
+
+// /JK=ALL, JK=1,...
+// /JI -> alle Infos
+// /JS
 
 app.listen(8081, () => {
     console.log('Example app listening at http://localhost:8081')
@@ -47,7 +53,7 @@ app.listen(8081, () => {
 //     -> okay result Temp=21!
 
 let nm = bsb.Log$.subscribe((data) => {
-    console.log("RXJS:" + data);
+    console.log("" + data);
 });
 
 // bsb.Log$.pipe(filter(data => data == true), map()).subscribe()
