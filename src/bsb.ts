@@ -4,6 +4,9 @@ import * as net from "net";
 import * as stream from "stream";
 import e from "express";
 
+import { DateTimeValue } from './DateTimeValue'
+import { DayMonthValue } from './DayMonthValue'
+
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -146,6 +149,7 @@ export class Definition {
 
 }
 
+
 export class BSB {
 
     constructor(definition: Definition, device: Device, src: number = 0xC2, language: string = "KEY") {
@@ -270,58 +274,24 @@ export class BSB {
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
 
-            if (command?.type.name == 'DATETIME') {
-                value = 'dateTIME'
-                let payload = msg.payload;
-                value = payload[3].toString().padStart(2, '0') + '.'
-                    + payload[2].toString().padStart(2, '0') + '.'
-                    + (1900 + payload[1]).toString().padStart(2, '0') + ' '
-                    + payload[5].toString().padStart(2, '0') + ':' + payload[6].toString().padStart(2, '0') + ':' + payload[7].toString().padStart(2, '0')
-            }
-
-            if (command?.type.name == 'VACATIONPROG' || command?.type.name == 'SUMMERPERIOD') {
-                let payload = msg.payload;
-                if ((payload[0] & 0x01) != 0x01) {
-                    value = payload[3].toString().padStart(2, '0') + '.' + payload[2].toString().padStart(2, '0') + '.';
-                }
-                else
-                    value = null;
+            switch (command?.type.name) {
+                case 'DATETIME':
+                    value = DateTimeValue.from(msg.payload)
+                    break
+                case 'VACATIONPROG':
+                case 'SUMMERPERIOD':
+                    value = DayMonthValue.from(msg.payload)
+                    break
+                case 'TIMEPROG':
+                    break
+                // default:
+                //     value = msg.payload
             }
 
             if (command?.type.name == 'TIMEPROG') {
                 let payload = msg.payload;
 
-                let values = [];
-
-                for (let i = 0; i < 3; i++) {
-                    // check if block is enabled
-                    if ((payload.slice(4 * i)[0] & 0x80) != 0x80) {
-                        let start = this.toHHMM(payload.slice(4 * i + 0, 4 * i + 2));
-                        let end = this.toHHMM(payload.slice(4 * i + 2, 4 * i + 4));
-                        values.push({
-                            "start": start,
-                            "end": end,
-                            toString: () => (start ?? '--:--') + ' - ' + (end ?? '--:--')
-                        });
-                    }
-                    values.toString = function () {
-                        let result = ''
-                        let val = this;
-
-                        for (let i = 0; i < 3; i++) {
-                            if (i > 0)
-                                result += ' '
-                            result += (i+1) + '. '
-                            if (i < val.length) {
-                                result += val[i].toString()
-                            } else {
-                                result += '--:-- - --:--'
-                            }
-                        }
-
-                        return result
-                    }
-                }
+               this.toHHMM
 
                 value = values;
             }
@@ -417,7 +387,7 @@ export class BSB {
         this.log$.next(MSG_TYPE[msg.typ] + ' '
             + this.toHexString([msg.src])
             + ' -> ' + this.toHexString([msg.dst])
-            + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
+            + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---').toString());
         //    console.log('********' + this.toHexString(msg.data));
         //    console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
 
