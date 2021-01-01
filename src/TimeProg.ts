@@ -1,24 +1,38 @@
-import { Value } from './interfaces'
+import { Value, Command } from './interfaces'
 
 export class TimeProgEntry {
     public start?: Date
     public end?: Date
 
-    public toString ()  {
-        return (this.start ?? '--:--') + ' - ' + (this.end ?? '--:--')
+    constructor(data?: number[] | string) {
+        if (data instanceof Array) {
+            // check that data.len = 4
+            this.start = new Date(0, 0, 0, data[0], data[1])
+            this.end = new Date(0, 0, 0, data[2], data[3])
+        }
+        // todo add parese from string
     }
+
+    public toString() {
+
+        const options = { hour: '2-digit', minute: '2-digit', seconds: undefined };
+        return (this.start?.toLocaleTimeString('de-DE', options) ?? '--:--')
+            + ' - '
+            + (this.end?.toLocaleTimeString('de-DE', options) ?? '--:--')
+    }
+
+    public static empty = new TimeProgEntry()
 }
 
 export class TimeProgValues implements Value<TimeProgEntry[]> {
 
     public value: TimeProgEntry[] | null = null
+    private command: Command
 
-    private constructor() { }
+    constructor(data: number[] | string, command: Command) {
+        this.command = command;
 
-    public static from(data: number[] | string | Date): TimeProgValues {
-
-        let result = new TimeProgValues()
-        result.value = []
+        this.value = []
 
         if (data instanceof Array) {
             let values = [];
@@ -27,52 +41,39 @@ export class TimeProgValues implements Value<TimeProgEntry[]> {
                 // check if block is enabled
                 if ((data.slice(4 * i)[0] & 0x80) != 0x80) {
 
-                   // return byteArray[0].toString().padStart(2, '0') + ':' + byteArray[1].toString().padStart(2, '0');
-    
-                    let entry = new TimeProgEntry()
-                    entry.start = this.toHHMM(data.slice(4 * i + 0, 4 * i + 2))
-                    entry.end = this.toHHMM(data.slice(4 * i + 2, 4 * i + 4))
-
-                    result.value.push(entry)
+                    this.value.push(new TimeProgEntry(data.slice(4 * i + 0, 4 * i + 4)))
                 }
-               
+
             }
 
             // let data = data;
             //     if ((data[0] & 0x01) != 0x01) {
-            //         result.value = new Date(0, data[2]-1, data[3]);
+            //         this.value = new Date(0, data[2]-1, data[3]);
             //     }
             //     else
-            //         result.value = null;
-        } else if (typeof(data) == 'string')
-        {
+            //         this.value = null;
+        } else if (typeof (data) == 'string') {
             // ToDo Parse String
-            //result.value = new Date(data)
+            //this.value = new Date(data)
         }
-
-        return result
     }
 
     public toString() {
 
-        // values.toString = function () {
-        //     let result = ''
-        //     let val = this;
+        let result = ''
+        let val = this.value ?? [];
 
-        //     for (let i = 0; i < 3; i++) {
-        //         if (i > 0)
-        //             result += ' '
-        //         result += (i + 1) + '. '
-        //         if (i < val.length) {
-        //             result += val[i].toString()
-        //         } else {
-        //             result += '--:-- - --:--'
-        //         }
-        //     }
+        for (let i = 0; i < 3; i++) {
+            if (i > 0)
+                result += ' '
+            result += (i + 1) + '. '
+            if (i < val.length) {
+                result += val[i].toString()
+            } else {
+                result += TimeProgEntry.empty.toString()
+            }
+        }
 
-        //     return result
-        // }
-
-        return this.value?.toString() ?? '---'
+        return result
     }
 }

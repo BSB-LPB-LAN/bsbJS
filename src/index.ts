@@ -1,5 +1,6 @@
 import * as fs from "fs";
-import { Definition, BSB } from './bsb'
+import { BSB } from './bsb'
+import { Definition } from './Definition'
 
 import express from 'express';
 

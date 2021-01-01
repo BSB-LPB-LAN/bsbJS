@@ -1,34 +1,30 @@
-import { Value } from './interfaces'
+import { Value, Command } from './interfaces'
 
 export class DayMonthValue implements Value<Date> {
 
     public value: Date | null = null
+    private command : Command
 
-    private constructor() { }
-
-    public static from(data: number[] | string | Date): DayMonthValue {
-
-        let result = new DayMonthValue()
+    constructor (data: number[] | string | Date, command: Command ) {
+        this.command = command;
+        
         if (data instanceof Array) {
             let payload = data;
                 if ((payload[0] & 0x01) != 0x01) {
-                    result.value = new Date(0, payload[2]-1, payload[3]);
+                    this.value = new Date(0, payload[2]-1, payload[3]);
                 }
                 else
-                    result.value = null;
+                    this.value = null;
         } else  if (data instanceof Date)
         {
-            result.value = data
+            this.value = data
         } else if (typeof(data) == 'string')
         {
-            result.value = new Date(data)
+            this.value = new Date(data)
         }
-
-        return result
     }
 
     public toString() {
-
         const options = { year: undefined, month: 'numeric', day: 'numeric'};
 
         return this.value?.toLocaleString('de-DE', options) ?? '---'

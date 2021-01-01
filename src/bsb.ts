@@ -6,7 +6,14 @@ import e from "express";
 
 import { DateTimeValue } from './DateTimeValue'
 import { DayMonthValue } from './DayMonthValue'
+import { TimeProgValues } from "./TimeProg";
+import { HourMinuteValue } from "./HourMinuteValue";
+import { StringValue } from "./StringValue";
+import { NumberValue } from "./NumberValue";
+import { EnumValue } from "./EnumValue";
 
+import { Definition } from './Definition'
+import { Helper } from './Helper'
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -56,8 +63,6 @@ export enum MSG_TYPE {
     IA2 = 0x15,
 }
 
-
-//#region Interfaces
 export interface RAWMessage {
     data: number[];
     src: number;
@@ -67,88 +72,6 @@ export interface RAWMessage {
     crc: number[];
     payload: number[];
 }
-
-interface CmdMap {
-    [key: string]: Command[];
-}
-
-//#endregion
-export class Definition {
-
-    private config: BSBDefinition;
-
-    private mapCmds: CmdMap = {};
-    private mapParams: CmdMap = {};
-
-    constructor(config: any) {
-        this.config = config;
-
-        for (let catKEY in this.config.categories) {
-            let cat = this.config.categories[catKEY];
-            for (let item of cat.commands) {
-                let map = this.mapCmds[item.command];
-                if (!this.mapCmds[item.command])
-                    this.mapCmds[item.command] = [];
-
-                this.mapCmds[item.command].push(item);
-
-                if (!this.mapParams[item.parameter])
-                    this.mapParams[item.parameter] = [];
-
-                this.mapParams[item.parameter].push(item);
-            }
-        }
-    }
-
-    private find(place: 'Cmd' | 'Param', key: string, dev_family: number, dev_variant: number): Command | null {
-        let item: Command[]
-
-        if (place == 'Cmd') {
-            item = this.mapCmds[key]
-        }
-        else {
-            item = this.mapParams[key]
-        }
-        if (item)
-            for (let entry of item) {
-                for (let device of entry.device) {
-                    if ((device.family == dev_family)
-                        && (device.var == dev_variant))
-                        return entry;
-                }
-            }
-        return null;
-    }
-
-    private findCMDorParam(place: 'Cmd' | 'Param', key: string, device: Device): Command | null {
-
-        let result: Command | null = null;
-
-        // search for exact match of family and variant
-        result = this.find(place, key, device.family, device.var);
-        if (result) return result;
-
-        // search for exact match of family
-        result = this.find(place, key, device.family, 255);
-        if (result) return result;
-
-        // search for exact 255,255
-        result = this.find(place, key, 255, 255);
-        if (result) return result;
-
-        return null;
-    }
-
-    public findCMD(cmd: string, device: Device): Command | null {
-        return this.findCMDorParam('Cmd', cmd, device)
-    }
-
-    public findParam(param: number, device: Device): Command | null {
-        return this.findCMDorParam('Param', param.toString(), device)
-    }
-
-}
-
 
 export class BSB {
 
@@ -184,38 +107,6 @@ export class BSB {
         error: (reason?: any) => void;
     }[] = []
 
-    private getLanguage(langRessource: TranslateItem | undefined): string | null {
-
-        if (!langRessource)
-            return null;
-
-        let lookup = langRessource as any;
-
-        if (lookup.hasOwnProperty(this.language)) {
-            return lookup[this.language];
-        }
-
-        if (lookup.hasOwnProperty("EN")) {
-            return lookup[this.language];
-        }
-
-        if (lookup.hasOwnProperty("DE")) {
-            return lookup[this.language];
-        }
-
-        if (lookup.hasOwnProperty("KEY")) {
-            return lookup[this.language];
-        }
-
-        return null;
-    }
-
-    private toHexString(byteArray: number[]): string {
-        return Array.from(byteArray, function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        }).join('').toUpperCase();
-    }
-
     private calcCRC(data: number[]): [number, number] {
         function crc16(crc16: number, item: number): number {
 
@@ -243,14 +134,6 @@ export class BSB {
         ]
     }
 
-    private toHHMM(byteArray: number[]): string {
-
-        if (byteArray.length != 2)
-            return '--:--';
-
-        return byteArray[0].toString().padStart(2, '0') + ':' + byteArray[1].toString().padStart(2, '0');
-    }
-
     private parseMessage(msg: RAWMessage) {
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET) {
@@ -259,121 +142,67 @@ export class BSB {
             msg.cmd[1] = swap;
         }
 
-        let cmd = '0x' + this.toHexString(msg.cmd);
+        let cmd = '0x' + Helper.toHexString(msg.cmd);
         let command = this.definition.findCMD(cmd, this.device);
 
         let value: string | object | [] | null | number = null
-        let rawValue: number | null = null;
-        let enumvalue: number | null = null
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
-            value = this.toHexString(msg.payload);
+            value = Helper.toHexString(msg.payload);
             if (value.length > 0)
                 value = 'Payload: 0x' + value;
         }
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
 
-            switch (command?.type.name) {
-                case 'DATETIME':
-                    value = DateTimeValue.from(msg.payload)
-                    break
-                case 'VACATIONPROG':
-                case 'SUMMERPERIOD':
-                    value = DayMonthValue.from(msg.payload)
-                    break
-                case 'TIMEPROG':
-                    break
-                // default:
-                //     value = msg.payload
-            }
+            // add Parse of SET Messages also to the Type.from() functions
 
-            if (command?.type.name == 'TIMEPROG') {
-                let payload = msg.payload;
+            if (command) {
 
-               this.toHHMM
-
-                value = values;
-            }
-
-            if (command?.type.datatype == 'VALS' || command?.type.datatype == 'ENUM') {
-
-                let payload = msg.payload;
-                let len = command.type.payload_length & 31;
-                rawValue = 0
-
-                // WORKAROUND: no length is defined from the command table
-                if (command?.type.datatype == 'VALS') {
-
-                    // if the len is odd and no enable_byte, in most cases this should be added
-                    if ((payload.length == 3 || payload.length == 5) && command.type.enable_byte == 0) {
-                        command.type.enable_byte = 1;
-                    }
-
-                    if (len == 0)
-                        // if no enable_byte than just take length otherwise length-1
-                        len = payload.length - (command.type.enable_byte == 0 ? 0 : 1);
-                }
-
-                let enabled = true;
-                if (command.type.enable_byte > 0) {
-
-                    if ((payload[0] & 0x01) == 0x01)
-                        enabled = false;
-
-                    payload = payload.slice(1);
-                }
-
-                if (enabled) {
-
-                    if (command?.type.datatype == 'VALS') {
-                        switch (len) {
-                            case 1:
-                                rawValue = Buffer.from(payload).readInt8();
-                                break;
-                            case 2:
-                                rawValue = Buffer.from(payload).readInt16BE();
-                                break;
-                            case 4:
-                                rawValue = Buffer.from(payload).readInt32BE();
-                                break;
+                switch (command.type.datatype) {
+                    case 'BITS':
+                        // TODO
+                        break
+                    case 'ENUM':
+                        value = new EnumValue(msg.payload, command)
+                        break
+                    case 'VALS':
+                        value = new NumberValue(msg.payload, command)
+                        break;
+                    case 'DDMM':
+                        value = new DayMonthValue(msg.payload, command)
+                        break
+                    case 'DTTM':
+                        switch (command.type.name) {
+                            case 'DATETIME':
+                                value = new DateTimeValue(msg.payload, command)
+                                break
+                            case 'TIMEPROG':
+                                value = new TimeProgValues(msg.payload, command)
+                                break
                         }
-                        value = (rawValue / command.type.factor).toFixed(command.type.precision)
-                    }
-
-                    if (command?.type.datatype == 'ENUM') {
-                        if (payload.length == 1)
-                            payload.unshift(0);
-
-                        let enumKey = '0x' + this.toHexString(payload);
-                        value = this.getLanguage(command.enum[enumKey]);
-
-                        enumvalue = payload[1]
-
-                        if (!value && (command.type.name == 'ONOFF' || command.type.name == 'YESNO' || command.type.name == 'CLOSEDOPEN' || command.type.name == 'VOLTAGEONOFF')) {
-                            // for toggle options only the last bit counts try if 0xFF was wrong again with 0x01
-                            payload[1] = payload[1] & 0x01;
-
-                            enumKey = '0x' + this.toHexString(payload);
-                            value = this.getLanguage(command.enum[enumKey]);
-                        }
-
-                        if (!value)
-                            console.log(`ENUM   ${payload} - ${enumKey} `, command.enum);
-                    }
+                        break;
+                    case 'HHMM':
+                        value = new HourMinuteValue(msg.payload, command)
+                        break;
+                    case 'STRN':
+                        value = new StringValue(msg.payload, command)
+                        break;
+                    case 'DWHM':
+                        // ignore only PPS
+                        break;
+                    case 'WDAY':
+                        // ignore because not used in any command
+                        break
                 }
-                //console.log('********' + len + ' - '+rawValue+ ' - '+value +'       - '+this.toHexString(payload));
             }
+
+
+            
         }
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
             if (this.openRequests.length > 0) {
                 let req = this.openRequests.shift();
-
-                // let desc = ""
-                // if (!rawValue) {
-                //     desc = value as string
-                //     value = rawValue
-                // }
 
                 req?.done({
                     msg: msg,
@@ -385,9 +214,9 @@ export class BSB {
             }
         }
         this.log$.next(MSG_TYPE[msg.typ] + ' '
-            + this.toHexString([msg.src])
-            + ' -> ' + this.toHexString([msg.dst])
-            + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---').toString());
+            + Helper.toHexString([msg.src])
+            + ' -> ' + Helper.toHexString([msg.dst])
+            + ' ' + cmd + ' ' + Helper.getLanguage(command?.description, this.language) + ' (' + command?.parameter + ') = ' + (value ?? '---').toString());
         //    console.log('********' + this.toHexString(msg.data));
         //    console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
 
@@ -405,8 +234,8 @@ export class BSB {
                 if (pos < this.buffer.length - len + 1) {
                     let newmessage = this.buffer.slice(pos, pos + len);
 
-                    let crc = this.toHexString(newmessage.slice(newmessage.length - 2));
-                    let crcCalculated = this.toHexString(this.calcCRC(newmessage.slice(0, newmessage.length - 2)));
+                    let crc = Helper.toHexString(newmessage.slice(newmessage.length - 2));
+                    let crcCalculated = Helper.toHexString(this.calcCRC(newmessage.slice(0, newmessage.length - 2)));
 
                     if (crc == crcCalculated) {
                         let msg = {
@@ -510,13 +339,13 @@ export class BSB {
                     res.value = res.enumvalue
                 }
                 result[res.command.parameter] = {
-                    name: this.getLanguage(res.command.description),
+                    name: Helper.getLanguage(res.command.description, this.language),
                     error: res.msg.typ == MSG_TYPE.ERR ? res.msg.payload[0] : 0,
                     value: res.msg.typ == MSG_TYPE.ERR ? "" : res.value?.toString(), // add pure value number
                     desc: desc,
                     dataType: res.command.type.datatype_id,
                     readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
-                    unit: this.getLanguage(res.command.type.unit)
+                    unit: Helper.getLanguage(res.command.type.unit, this.language)
                 }
             }
         }

@@ -51,3 +51,7 @@ export interface Type {
     precision: number;
     enable_byte: number;
 }
+
+export interface CmdMap {
+    [key: string]: Command[];
+}

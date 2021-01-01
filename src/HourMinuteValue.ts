@@ -1,6 +1,6 @@
 import { Value, Command } from './interfaces'
 
-export class DateTimeValue implements Value<Date> {
+export class HourMinuteValue implements Value<Date> {
 
     public value: Date | null = null
     private command : Command
@@ -9,11 +9,11 @@ export class DateTimeValue implements Value<Date> {
         this.command = command;
         if (data instanceof Array) {
             let payload = data;
-           
-            this.value = new Date(
-                payload[1]+1900, payload[2]-1,payload[3], // Date
-                payload[5], payload[6], payload[7] )    // Time
-
+                if ((payload[0] & 0x01) != 0x01) {
+                    this.value = new Date(0,0,0, payload[1], payload[2]);
+                }
+                else
+                    this.value = null;
         } else  if (data instanceof Date)
         {
             this.value = data
@@ -23,8 +23,9 @@ export class DateTimeValue implements Value<Date> {
         }
     }
 
-    public toString () {
-        const options = { year: 'numeric', month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' };
-        return this.value?.toLocaleDateString('de-DE', options).replace(',','') ?? '---'
+    public toString() {
+        const options = { hour: '2-digit', minute: '2-digit', seconds: undefined };
+
+        return this.value?.toLocaleTimeString('de-DE', options) ?? '---'
     }
 }
