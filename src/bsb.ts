@@ -11,9 +11,11 @@ import { HourMinuteValue } from "./HourMinuteValue";
 import { StringValue } from "./StringValue";
 import { NumberValue } from "./NumberValue";
 import { EnumValue } from "./EnumValue";
+import { BitValue } from "./BitValue";
 
 import { Definition } from './Definition'
 import { Helper } from './Helper'
+import { ErrorValue } from "./ErrorValue";
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -145,7 +147,7 @@ export class BSB {
         let cmd = '0x' + Helper.toHexString(msg.cmd);
         let command = this.definition.findCMD(cmd, this.device);
 
-        let value: string | object | [] | null | number = null
+        let value: string |  object | null  = null
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
             value = Helper.toHexString(msg.payload);
@@ -161,7 +163,7 @@ export class BSB {
 
                 switch (command.type.datatype) {
                     case 'BITS':
-                        // TODO
+                        value = new BitValue(msg.payload, command)
                         break
                     case 'ENUM':
                         value = new EnumValue(msg.payload, command)
@@ -196,10 +198,12 @@ export class BSB {
                         break
                 }
             }
-
-
-            
         }
+
+        if (msg.typ == MSG_TYPE.ERR && command) {
+            value = new ErrorValue(msg.payload)
+        }
+
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
             if (this.openRequests.length > 0) {
                 let req = this.openRequests.shift();
@@ -207,21 +211,15 @@ export class BSB {
                 req?.done({
                     msg: msg,
                     command: command,
-                    value: value,
-                    enumvalue: enumvalue,
-                    desc: ''
+                    value: value
                 })
             }
         }
         this.log$.next(MSG_TYPE[msg.typ] + ' '
             + Helper.toHexString([msg.src])
             + ' -> ' + Helper.toHexString([msg.dst])
-            + ' ' + cmd + ' ' + Helper.getLanguage(command?.description, this.language) + ' (' + command?.parameter + ') = ' + (value ?? '---').toString());
-        //    console.log('********' + this.toHexString(msg.data));
-        //    console.log(MSG_TYPE[msg.typ] + ' ' + cmd + ' ' + this.getLanguage(command?.description) + ' (' + command?.parameter + ') = ' + (value ?? '---'));
-
+            + ' ' + cmd + ' ' + Helper.getLanguage(command?.description, this.language) + ' (' + command?.parameter + ') = ' + ((value ?? '---') as any).toString(this.language));
     }
-
 
     private parseBuffer() {
         let pos: number = 0;
@@ -333,15 +331,23 @@ export class BSB {
                 if (!res.value)
                     res.value = ""
 
-                let desc = ''
-                if (res.command.type.datatype == "ENUM") {
-                    desc = res.value?.toString()
-                    res.value = res.enumvalue
+                let error = 0
+                let value = res.value?.toString()
+                if (res.value instanceof ErrorValue) {
+                    error = value
+                    value = ''
                 }
+
+                let desc = ''
+                if (res.value instanceof EnumValue) {
+                    desc = res.value?.toString(this.language)
+                    value = res.value.value
+                }
+
                 result[res.command.parameter] = {
                     name: Helper.getLanguage(res.command.description, this.language),
-                    error: res.msg.typ == MSG_TYPE.ERR ? res.msg.payload[0] : 0,
-                    value: res.msg.typ == MSG_TYPE.ERR ? "" : res.value?.toString(), // add pure value number
+                    error: error,
+                    value: value,
                     desc: desc,
                     dataType: res.command.type.datatype_id,
                     readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,

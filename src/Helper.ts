@@ -1,7 +1,7 @@
 import { TranslateItem } from "./interfaces";
 
 export class Helper {
-    public static getLanguage(langRessource: TranslateItem | undefined, language: string = "KEY"): string | null {
+    public static getLanguage(langRessource: TranslateItem | null | undefined, language: string = "KEY"): string | null {
 
         if (!langRessource)
             return null;

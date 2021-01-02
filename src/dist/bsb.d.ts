@@ -55,8 +55,6 @@ export declare class BSB {
     private device;
     private src;
     private openRequests;
-    private getLanguage;
-    private toHexString;
     private calcCRC;
     private parseMessage;
     private parseBuffer;

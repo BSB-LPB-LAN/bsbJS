@@ -25,7 +25,7 @@ export class DayMonthValue implements Value<Date> {
     }
 
     public toString() {
-        const options = { year: undefined, month: 'numeric', day: 'numeric'};
+        const options = { year: undefined, month: '2-digit', day: '2-digit'};
 
         return this.value?.toLocaleString('de-DE', options) ?? '---'
     }
