@@ -5,7 +5,7 @@ export class NumberValue implements Value<number> {
     public value: number | null = null
     private command: Command
 
-    constructor(data: number[] | string | Date, command: Command) {
+    constructor(data: number[] | string | number | null, command: Command) {
         this.command = command;
         if (data instanceof Array) {
 

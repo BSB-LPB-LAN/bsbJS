@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { Device } from "./interfaces";
+import { Command, Device } from "./interfaces";
 import { Observable } from "rxjs";
 import * as stream from "stream";
 import { Definition } from './Definition';
@@ -44,6 +44,11 @@ export interface RAWMessage {
     crc: number[];
     payload: number[];
 }
+declare type busRequestAnswer = null | {
+    command: Command;
+    value: any;
+    msg: RAWMessage;
+};
 export declare class BSB {
     Log$: Observable<any>;
     private log$;
@@ -64,6 +69,8 @@ export declare class BSB {
     private newData;
     connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
-    private getOne;
+    private sentCommand;
+    set(param: number, value: object, dst?: number): Promise<busRequestAnswer>;
     get(param: number | number[], dst?: number): Promise<any>;
 }
+export {};

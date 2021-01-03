@@ -3,6 +3,7 @@ import { BSB } from './bsb'
 import { Definition } from './Definition'
 
 import express from 'express';
+import { NumberValue } from "./NumberValue";
 
 let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json')
 let config = JSON.parse(rawdata as any)
@@ -25,9 +26,16 @@ app.get('/JQ=:query', (req, res) => {
         .then(data => res.json(data))
 })
 
+app.get('/JS=:query', (req, res) => {
+    let q = parseInt(req.params.query,10)
+    
+    bsb.set(q, 21)
+})
+
 app.get('/JK=:query', (req, res) => {
     res.send('get K')
 })
+
 
 // /JK=ALL, JK=1,...
 // /JI -> alle Infos

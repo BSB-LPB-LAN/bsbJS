@@ -334,18 +334,33 @@ export class BSB {
     }
 
     // rename to sentCommand, with optional value
-    private getOne(param: number, dst: number = 0x00): Promise<busRequestAnswer> {
+    private sentCommand(param: number, value?: object, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
+        // check if command is NOT readonly if (value)
+
         if (command) {
-            let data = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
+            let cmd: number[] = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
 
-            const swap = data[0]
-            data[0] = data[1]
-            data[1] = swap
+            let len = 11
+            let type = MSG_TYPE.QUR
+            let payload: number[] = []
 
-            const len = 0x0B
-            data = [0xDC, this.src, dst, len, MSG_TYPE.QUR, ...data]
+            if (value) {
+                debugger // command 710 0x010540 -> 21°C
+                payload = (value as any).toPayload()
+
+                type = MSG_TYPE.SET
+                len+=command.type.payload_length
+            }
+
+            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET) {
+                const swap = cmd[0]
+                cmd[0] = cmd[1]
+                cmd[1] = swap
+            }
+
+            let data = [0xDC, this.src, dst, len, type, ...cmd, ...payload]
             data = [...data, ...this.calcCRC(data)]
 
             for (let i = 0; i < data.length; i++)
@@ -364,6 +379,17 @@ export class BSB {
         return new Promise((done) => { done(null) })
     }
 
+    public async set (param: number, value: number | string | null, dst: number = 0x00) {
+
+        let command = this.definition.findParam(param, this.device)
+
+        if (command) {
+            let val = new NumberValue(value, command)
+
+            return await this.sentCommand(param, val, dst)
+        }
+    } 
+
     public async get(param: number | number[], dst: number = 0x00): Promise<any> {
         if (!Array.isArray(param)) {
             param = [param]
@@ -371,7 +397,7 @@ export class BSB {
 
         let queue = []
         for (let item of param) {
-            queue.push(this.getOne(item, dst))
+            queue.push(this.sentCommand(item, undefined, dst))
         }
         let resAll = await Promise.all(queue)
 
