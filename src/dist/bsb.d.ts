@@ -45,7 +45,6 @@ export interface RAWMessage {
     payload: number[];
 }
 export declare class BSB {
-    constructor(definition: Definition, device: Device, src?: number, language?: string);
     Log$: Observable<any>;
     private log$;
     private definition;
@@ -54,10 +53,15 @@ export declare class BSB {
     private language;
     private device;
     private src;
-    private openRequests;
+    private lastReceivedData;
+    private sentQueue;
+    private openRequest;
+    constructor(definition: Definition, device: Device, src?: number, language?: string);
+    private checkSendQueue;
     private calcCRC;
     private parseMessage;
     private parseBuffer;
+    private newData;
     connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
     private getOne;

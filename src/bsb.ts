@@ -1,4 +1,4 @@
-import { BSBDefinition, Command, TranslateItem, Device } from "./interfaces";
+import { BSBDefinition, Command, TranslateItem, Device, Value } from "./interfaces";
 import { Observable, Subject } from "rxjs";
 import * as net from "net";
 import * as stream from "stream";
@@ -16,6 +16,7 @@ import { BitValue } from "./BitValue";
 import { Definition } from './Definition'
 import { Helper } from './Helper'
 import { ErrorValue } from "./ErrorValue";
+import { trace } from "console";
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -75,7 +76,41 @@ export interface RAWMessage {
     payload: number[];
 }
 
+type busRequest = {
+    timestamp?: Date
+    command: Command
+    data: number[]
+    done: (value: busRequestAnswer) => void
+    error: (reason?: any) => void
+}
+
+type busRequestAnswer = null | { 
+    command: Command
+    value: any
+    msg: RAWMessage
+}
 export class BSB {
+
+    //#region Variables & Properties
+    public Log$: Observable<any>;
+    private log$: Subject<any>;
+
+    private definition: Definition
+    private client: stream.Duplex | null = null
+
+    private buffer: number[] = []
+
+    private language: string
+
+    private device: Device
+
+    private src: number
+
+    private lastReceivedData: Date = new Date(0)
+
+    private sentQueue: busRequest[] = []
+    private openRequest: busRequest | null = null
+    //#endregion
 
     constructor(definition: Definition, device: Device, src: number = 0xC2, language: string = "KEY") {
 
@@ -86,28 +121,34 @@ export class BSB {
 
         this.log$ = new Subject();
         this.Log$ = this.log$.asObservable();
+
+        setInterval(() => this.checkSendQueue(), 10)
     }
 
-    public Log$: Observable<any>;
-    private log$: Subject<any>;
+    private checkSendQueue() {
+        // ToDo check for timeout
+        // if answers from the dst are already delivered,....
+        if (this.openRequest?.timestamp) {
+            let timeDiff = ((new Date().getTime()) - this.openRequest.timestamp.getTime()) / 1000
 
-    private definition: Definition
-    private client: stream.Duplex = new net.Socket()
+            // ToDo: make Timeout configurable now 5seconds
+            if (timeDiff > 5) {
+                this.openRequest.error('No Answer Timeout')
+                this.openRequest = null
+            }
+        }
 
-    private buffer: number[] = []
+        if (!this.openRequest && this.sentQueue.length > 0 && this.client) {
+            let newRequest = this.sentQueue.shift()
+            if (newRequest) {
 
-    private language: string
+                this.openRequest = newRequest
+                // todo move the call of the client write to a timer
+                this.client.write(Uint8Array.from(newRequest.data))
+            }
+        }
+    }
 
-    private device: Device
-
-    private src: number
-
-    private openRequests: {
-        parameter: number;
-        data: number[];
-        done: (value: any) => void;
-        error: (reason?: any) => void;
-    }[] = []
 
     private calcCRC(data: number[]): [number, number] {
         function crc16(crc16: number, item: number): number {
@@ -147,7 +188,7 @@ export class BSB {
         let cmd = '0x' + Helper.toHexString(msg.cmd);
         let command = this.definition.findCMD(cmd, this.device);
 
-        let value: string |  object | null  = null
+        let value: string | object | null = null
 
         if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
             value = Helper.toHexString(msg.payload);
@@ -158,7 +199,6 @@ export class BSB {
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
 
             // add Parse of SET Messages also to the Type.from() functions
-
             if (command) {
 
                 switch (command.type.datatype) {
@@ -205,14 +245,13 @@ export class BSB {
         }
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
-            if (this.openRequests.length > 0) {
-                let req = this.openRequests.shift();
-
-                req?.done({
+            if (this.openRequest && (this.openRequest?.command.parameter === command?.parameter)) {
+                this.openRequest.done({
                     msg: msg,
                     command: command,
-                    value: value
+                    value: value as object
                 })
+                this.openRequest = null
             }
         }
         this.log$.next(MSG_TYPE[msg.typ] + ' '
@@ -263,9 +302,22 @@ export class BSB {
         }
     }
 
+    private newData(data: number[]) {
+        this.lastReceivedData = new Date()
+        for (let i = 0; i < data.length; i++) {
+            this.buffer.push(~data[i] & 0xFF)
+        }
+        this.parseBuffer()
+    }
+
     public connect(stream: stream.Duplex): void;
     public connect(ip: string, port: number): void;
     public connect(param1: string | stream.Duplex, param2?: number) {
+
+        try {
+            this.client?.off('data', data => this.newData(data));
+        } catch { }
+
         if (param1 instanceof stream.Duplex) {
             this.client = param1
         }
@@ -278,15 +330,11 @@ export class BSB {
             this.client = socket
         }
 
-        this.client.on('data', (data) => {
-            for (let i = 0; i < data.length; i++) {
-                this.buffer.push(~data[i] & 0xFF)
-            }
-            this.parseBuffer()
-        });
+        this.client.on('data', data => this.newData(data));
     }
 
-    private getOne(param: number, dst: number = 0x00): Promise<any> {
+    // rename to sentCommand, with optional value
+    private getOne(param: number, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
         if (command) {
@@ -303,15 +351,13 @@ export class BSB {
             for (let i = 0; i < data.length; i++)
                 data[i] = (~data[i]) & 0xFF;
 
-            return new Promise<any>((done, error) => {
-                this.openRequests.push({
-                    parameter: param,
+            return new Promise<busRequestAnswer>((done, error) => {
+                this.sentQueue.push({
+                    command: command,
                     data: data,
                     done: done,
                     error: error
                 })
-                // todo move the call of the client write to a timer
-                this.client.write(Uint8Array.from(data))
             })
         }
 
@@ -323,24 +369,27 @@ export class BSB {
             param = [param]
         }
 
-        let result: any = {}
+        let queue = []
         for (let item of param) {
-            const res = await this.getOne(item, dst) as { command: Command, value: any, enumvalue: any, msg: RAWMessage };
+            queue.push(this.getOne(item, dst))
+        }
+        let resAll = await Promise.all(queue)
+
+        let result: any = {}
+        for (let res of resAll) {
 
             if (res) {
-                if (!res.value)
-                    res.value = ""
 
                 let error = 0
-                let value = res.value?.toString()
+                let value = res.value?.toString(this.language)
+                let desc = ''
                 if (res.value instanceof ErrorValue) {
                     error = value
                     value = ''
                 }
 
-                let desc = ''
                 if (res.value instanceof EnumValue) {
-                    desc = res.value?.toString(this.language)
+                    desc = value
                     value = res.value.value
                 }
 
