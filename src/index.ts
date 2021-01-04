@@ -1,110 +1,41 @@
 import * as fs from "fs";
-import { BSB } from './bsb'
+import { BSB, MSG_TYPE } from './bsb'
 import { Definition } from './Definition'
 
 import express from 'express';
+import { KeyItem } from "./interfaces";
+import { add_v0_API } from "./bsbAPI"
+import { Helper } from "./Helper";
 
 let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json')
 let config = JSON.parse(rawdata as any)
 let definition = new Definition(config)
 
-let bsb = new BSB(definition, { family: 163, var: 5 }, 0xC3, "DE")
+let language = 'DE'
+
+let bsb = new BSB(definition, { family: 163, var: 5 }, 0xC3)
 bsb.connect('192.168.203.179', 1000)
 
 const app = express()
-
+// make JSON result easier to read
 app.set('json spaces', 2)
 
-// app.post('/JQ') -> paramter from body
-app.get(['/JQ=:query', '/api/v0/JQ=:query'], (req, res) => {
-    let query = req.params.query
-        .split(',')
-        .map(item => parseInt(item, 10))
-
-    bsb.get(query)
-        .then(data => res.json(data))
-})
-
-app.all('/JS', (req, res) => {
-    if (req.method == "GET" || req.method == "POST") {
-
-        var data = "";
-        req.on('data', function(chunk){ data += chunk})
-        req.on('end', function(){
-            let body = JSON.parse(data)
-            let param = parseInt(body.Parameter,10)
-            bsb.set(param, body.Value)
-                .then(_=> res.send('done'))
-        })
-        // {
-        //     "Parameter": cfg.parameters[0],
-        //     "Value": cfg.value,
-        //     "Type": cfg.requesttype == "INF" ? "0" : "1" // "Type" (0 = INF, 1 = SET) 
-        // }
-    } else res.send('error method')
-})
-
-app.get('/JK=:query', (req, res) => {
-    res.send('get K')
-})
-
-
-// /JK=ALL, JK=1,...
-// /JI -> alle Infos
-// /JS
+add_v0_API(app, bsb, definition, language)
 
 app.listen(8081, () => {
     console.log('Example app listening at http://localhost:8081')
 })
 
-// setInterval(() => {
-//     bsb.send();
-// }, 5000);
+let nm = bsb.Log$.subscribe((log) => {
 
-// bsb.set("Temp=22°")
-//     -> Error
-//     -> okay
-
-// bsb.inf("Temp=22°")
-//     -> Error
-//     -> okay
-
-// bsb.get("Temp?")
-//     -> Error
-//     -> okay result Temp=21!
-
-let nm = bsb.Log$.subscribe((data) => {
-    console.log("" + data);
+    // ToDo implement equivalent to telnet log
+    console.log(
+        Helper.toHexString(log.msg.data).padEnd(50, ' ') + MSG_TYPE[log.msg.typ].padStart(4, ' ') + ' '
+        + Helper.toHexString([log.msg.src])
+        + ' -> ' + Helper.toHexString([log.msg.dst])
+        + ' ' + log.command.command + ' ' + Helper.getLanguage(log.command?.description, language) + ' (' + log.command?.parameter + ') = ' 
+        + ((log.value ?? '---') as any).toString(language)
+    )
 });
 
 // bsb.Log$.pipe(filter(data => data == true), map()).subscribe()
-
-// setTimeout(() => nm.unsubscribe(), 10000);
-
-
-
-//#region comment howt read device familiy & Variant
-// {
-//     "6225": {
-//       "name": "Gerätefamilie",
-//       "error": 0,
-//       "value": "163",
-//       "desc": "",
-//       "dataType": 0,
-//       "readonly": 0,
-//       "unit": ""
-//     }
-//   }
-
-// {
-//     "6226": {
-//       "name": "Gerätevariante",
-//       "error": 0,
-//       "value": "5",
-//       "desc": "",
-//       "dataType": 0,
-//       "readonly": 0,
-//       "unit": ""
-//     }
-//   }
-//#endregion

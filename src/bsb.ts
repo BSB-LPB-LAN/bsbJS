@@ -2,12 +2,10 @@ import { BSBDefinition, Command, TranslateItem, Device, Value, Payload } from ".
 import { Observable, Subject } from "rxjs";
 import * as net from "net";
 import * as stream from "stream";
-import e from "express";
 
 import * as Payloads from './Payloads/'
 import { Definition } from './Definition'
 import { Helper } from './Helper'
-import { QueryResult } from "./bsbAPI"
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -58,13 +56,14 @@ export enum MSG_TYPE {
 }
 
 export interface RAWMessage {
-    data: number[];
     src: number;
     dst: number;
     typ: MSG_TYPE;
     cmd: number[];
-    crc: number[];
     payload: number[];
+    crc: number[];
+    
+    data: number[];
 }
 
 type busRequest = {
@@ -75,12 +74,39 @@ type busRequest = {
     error: (reason?: any) => void
 }
 
-type busRequestAnswer = null | { 
+type busRequestAnswer = null | {
     command: Command
     value: Payload
     msg: RAWMessage
 }
 export class BSB {
+
+
+    //#region comment howt read device familiy & Variant
+    // {
+    //     "6225": {
+    //       "name": "Gerätefamilie",
+    //       "error": 0,
+    //       "value": "163",
+    //       "desc": "",
+    //       "dataType": 0,
+    //       "readonly": 0,
+    //       "unit": ""
+    //     }
+    //   }
+
+    // {
+    //     "6226": {
+    //       "name": "Gerätevariante",
+    //       "error": 0,
+    //       "value": "5",
+    //       "desc": "",
+    //       "dataType": 0,
+    //       "readonly": 0,
+    //       "unit": ""
+    //     }
+    //   }
+    //#endregion
 
     //#region Variables & Properties
     public Log$: Observable<any>;
@@ -90,8 +116,6 @@ export class BSB {
     private client: stream.Duplex | null = null
 
     private buffer: number[] = []
-
-    private language: string
 
     private device: Device
 
@@ -103,11 +127,10 @@ export class BSB {
     private openRequest: busRequest | null = null
     //#endregion
 
-    constructor(definition: Definition, device: Device, src: number = 0xC2, language: string = "KEY") {
+    constructor(definition: Definition, device: Device, src: number = 0xC2) {
 
         this.definition = definition;
         this.device = device;
-        this.language = language;
         this.src = src;
 
         this.log$ = new Subject();
@@ -170,7 +193,7 @@ export class BSB {
 
     private parseMessage(msg: RAWMessage) {
 
-        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET || msg.typ == MSG_TYPE.INF) {
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET || msg.typ == MSG_TYPE.INF) {
             let swap = msg.cmd[0];
             msg.cmd[0] = msg.cmd[1];
             msg.cmd[1] = swap;
@@ -187,31 +210,33 @@ export class BSB {
                 value = 'Payload: 0x' + value;
         }
 
-        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
-            if (command) {
+        if (command) {
+            if ((msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF)) {
                 value = Payloads.from(msg.payload, command)
             }
-        }
 
-        if ((msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.NACK) && command) {
-            value = new Payloads.Error(msg.payload)
-        }
+            if (msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.NACK) {
+                value = new Payloads.Error(msg.payload)
+            }
 
-        // todo: check INF
-        if (msg.typ != MSG_TYPE.QUR && msg.typ != MSG_TYPE.SET && msg.typ != MSG_TYPE.INF) {
-            if (this.openRequest && (this.openRequest?.command.parameter === command?.parameter)) {
-                this.openRequest.done({
-                    msg: msg,
-                    command: command,
-                    value: value as Payload
-                })
-                this.openRequest = null
+            // for INF Messages, see the reRead from the bus as succsessfull receive
+            if (msg.typ != MSG_TYPE.QUR && msg.typ != MSG_TYPE.SET) {
+                if (this.openRequest && (this.openRequest?.command.parameter === command.parameter)) {
+                    this.openRequest.done({
+                        msg: msg,
+                        command: command,
+                        value: value as Payload
+                    })
+                    this.openRequest = null
+                }
             }
         }
-        this.log$.next(Helper.toHexString(msg.data).padEnd(44,' ')+ MSG_TYPE[msg.typ].padStart(4,' ') + ' '
-            + Helper.toHexString([msg.src])
-            + ' -> ' + Helper.toHexString([msg.dst])
-            + ' ' + cmd + ' ' + Helper.getLanguage(command?.description, this.language) + ' (' + command?.parameter + ') = ' + ((value ?? '---') as any).toString(this.language));
+
+        this.log$.next({
+            msg: msg,
+            command: command,
+            value: value as Payload
+        })
     }
 
     private parseBuffer() {
@@ -288,12 +313,19 @@ export class BSB {
     }
 
     // rename to sentCommand, with optional value
-    private sentCommand(param: number, value?: Payload, dst: number = 0x00): Promise<busRequestAnswer> {
+    private sentCommand(param: number, val?: any, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
+
+        // ToDo: check ReadOnly Commands could not be written
 
         // check if command is NOT readonly if (value)
 
         if (command) {
+            let value: Payload | null = null
+
+            if (val)
+                value = Payloads.from(val, command)
+
             let cmd: number[] = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
 
             let len = 11
@@ -304,10 +336,10 @@ export class BSB {
                 payload = value.toPayload()
 
                 type = MSG_TYPE.SET
-                len+=payload.length
+                len += payload.length
             }
 
-            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET || type == MSG_TYPE.INF) {
+            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET || type == MSG_TYPE.INF) {
                 const swap = cmd[0]
                 cmd[0] = cmd[1]
                 cmd[1] = swap
@@ -332,18 +364,11 @@ export class BSB {
         return new Promise((done) => { done(null) })
     }
 
-    public async set (param: number, value: number | string | null, dst: number = 0x00) {
+    public async set(param: number, value: any, dst: number = 0x00) {
+        return await this.sentCommand(param, value, dst)
+    }
 
-        let command = this.definition.findParam(param, this.device)
-
-        if (command) {
-            let val = Payloads.from(value, command)
-
-            return await this.sentCommand(param, val, dst)
-        }
-    } 
-
-    public async get(param: number | number[], dst: number = 0x00): Promise<QueryResult> {
+    public async get(param: number | number[], dst: number = 0x00): Promise<busRequestAnswer[]> {
         if (!Array.isArray(param)) {
             param = [param]
         }
@@ -352,37 +377,6 @@ export class BSB {
         for (let item of param) {
             queue.push(this.sentCommand(item, undefined, dst))
         }
-        let resAll = await Promise.all(queue)
-
-        let result: QueryResult = {}
-        for (let res of resAll) {
-
-            if (res) {
-
-                let error = 0
-                let value = res.value?.toString(this.language)
-                let desc = ''
-                if (res.value instanceof Payloads.Error) {
-                    error = res.value.value ?? 0
-                    value = ''
-                }
-
-                if (res.value instanceof Payloads.Enum) {
-                    desc = value
-                    value = res.value.value?.toString()?? ''
-                }
-
-                result[res.command.parameter] = {
-                    name: Helper.getLanguage(res.command.description, this.language) ?? '',
-                    error: error,
-                    value: value,
-                    desc: desc,
-                    dataType: res.command.type.datatype_id,
-                    readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
-                    unit: Helper.getLanguage(res.command.type.unit, this.language) ?? ''
-                }
-            }
-        }
-        return result
+        return await Promise.all(queue)
     }
 }

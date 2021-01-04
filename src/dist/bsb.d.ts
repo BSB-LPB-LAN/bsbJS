@@ -3,7 +3,6 @@ import { Command, Device, Payload } from "./interfaces";
 import { Observable } from "rxjs";
 import * as stream from "stream";
 import { Definition } from './Definition';
-import { QueryResult } from "./bsbAPI";
 export declare enum MSG_TYPE {
     /** request info telegram */
     QINF = 1,
@@ -45,19 +44,23 @@ export interface RAWMessage {
     crc: number[];
     payload: number[];
 }
+declare type busRequestAnswer = null | {
+    command: Command;
+    value: Payload;
+    msg: RAWMessage;
+};
 export declare class BSB {
     Log$: Observable<any>;
     private log$;
     private definition;
     private client;
     private buffer;
-    private language;
     private device;
     private src;
     private lastReceivedData;
     private sentQueue;
     private openRequest;
-    constructor(definition: Definition, device: Device, src?: number, language?: string);
+    constructor(definition: Definition, device: Device, src?: number);
     private checkSendQueue;
     private calcCRC;
     private parseMessage;
@@ -66,10 +69,7 @@ export declare class BSB {
     connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
     private sentCommand;
-    set(param: number, value: number | string | null, dst?: number): Promise<{
-        command: Command;
-        value: Payload;
-        msg: RAWMessage;
-    } | null | undefined>;
-    get(param: number | number[], dst?: number): Promise<QueryResult>;
+    set(param: number, value: any, dst?: number): Promise<busRequestAnswer>;
+    get(param: number | number[], dst?: number): Promise<busRequestAnswer[]>;
 }
+export {};
