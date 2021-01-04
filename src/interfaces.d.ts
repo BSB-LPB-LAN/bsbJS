@@ -7,7 +7,6 @@ export interface Payload {
     toPayload: () => number[]
 }
 
-
 export interface BSBDefinition {
     version: string;
     compiletime: string;

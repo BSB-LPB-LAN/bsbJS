@@ -170,7 +170,7 @@ export class BSB {
 
     private parseMessage(msg: RAWMessage) {
 
-        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET) {
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET || msg.typ == MSG_TYPE.INF) {
             let swap = msg.cmd[0];
             msg.cmd[0] = msg.cmd[1];
             msg.cmd[1] = swap;
@@ -193,11 +193,12 @@ export class BSB {
             }
         }
 
-        if (msg.typ == MSG_TYPE.ERR && command) {
+        if ((msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.NACK) && command) {
             value = new Payloads.Error(msg.payload)
         }
 
-        if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
+        // todo: check INF
+        if (msg.typ != MSG_TYPE.QUR && msg.typ != MSG_TYPE.SET && msg.typ != MSG_TYPE.INF) {
             if (this.openRequest && (this.openRequest?.command.parameter === command?.parameter)) {
                 this.openRequest.done({
                     msg: msg,
@@ -207,7 +208,7 @@ export class BSB {
                 this.openRequest = null
             }
         }
-        this.log$.next(MSG_TYPE[msg.typ] + ' '
+        this.log$.next(Helper.toHexString(msg.data).padEnd(44,' ')+ MSG_TYPE[msg.typ].padStart(4,' ') + ' '
             + Helper.toHexString([msg.src])
             + ' -> ' + Helper.toHexString([msg.dst])
             + ' ' + cmd + ' ' + Helper.getLanguage(command?.description, this.language) + ' (' + command?.parameter + ') = ' + ((value ?? '---') as any).toString(this.language));
@@ -300,14 +301,13 @@ export class BSB {
             let payload: number[] = []
 
             if (value) {
-                debugger // command 710 0x010540 -> 21°C
-                payload = (value as any).toPayload()
+                payload = value.toPayload()
 
                 type = MSG_TYPE.SET
-                len+=command.type.payload_length
+                len+=payload.length
             }
 
-            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET) {
+            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET || type == MSG_TYPE.INF) {
                 const swap = cmd[0]
                 cmd[0] = cmd[1]
                 cmd[1] = swap

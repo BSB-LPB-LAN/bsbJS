@@ -16,7 +16,7 @@ const app = express()
 app.set('json spaces', 2)
 
 // app.post('/JQ') -> paramter from body
-app.get('/JQ=:query', (req, res) => {
+app.get(['/JQ=:query', '/api/v0/JQ=:query'], (req, res) => {
     let query = req.params.query
         .split(',')
         .map(item => parseInt(item, 10))
@@ -25,10 +25,23 @@ app.get('/JQ=:query', (req, res) => {
         .then(data => res.json(data))
 })
 
-app.get('/JS=:query', (req, res) => {
-    let q = parseInt(req.params.query,10)
-    
-    bsb.set(q, 21)
+app.all('/JS', (req, res) => {
+    if (req.method == "GET" || req.method == "POST") {
+
+        var data = "";
+        req.on('data', function(chunk){ data += chunk})
+        req.on('end', function(){
+            let body = JSON.parse(data)
+            let param = parseInt(body.Parameter,10)
+            bsb.set(param, body.Value)
+                .then(_=> res.send('done'))
+        })
+        // {
+        //     "Parameter": cfg.parameters[0],
+        //     "Value": cfg.value,
+        //     "Type": cfg.requesttype == "INF" ? "0" : "1" // "Type" (0 = INF, 1 = SET) 
+        // }
+    } else res.send('error method')
 })
 
 app.get('/JK=:query', (req, res) => {

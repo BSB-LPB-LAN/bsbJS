@@ -58,7 +58,36 @@ export class Number implements Value<number> {
     }
 
     public toPayload () {
-        return []
+        
+        let len = this.command.type.payload_length & 31
+        let enable_byte = this.command.type.enable_byte
+        let bf = Buffer.allocUnsafe(len + (enable_byte > 0 ? 1: 0));
+        if (enable_byte > 0)
+        {
+            if (this.value === null)
+                enable_byte--
+
+            bf.writeUInt8(enable_byte,0)
+        }
+
+        let value = (this.value ?? 0) * this.command.type.factor
+
+        switch (len) {
+            case 1:
+                bf.writeInt8(value ?? 0,1)
+                break;
+            case 2:
+                bf.writeInt16BE(value ?? 0,1);
+                break;
+            case 4:
+                bf.writeInt32BE(value ?? 0,1);
+                break;
+        }
+
+        let result = []
+        for (let i = 0; i < bf.length; i++)
+            result.push(bf[i])
+        return result
     }
 
     public toString() {

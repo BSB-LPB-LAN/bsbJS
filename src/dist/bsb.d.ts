@@ -1,8 +1,9 @@
 /// <reference types="node" />
-import { Command, Device } from "./interfaces";
+import { Command, Device, Payload } from "./interfaces";
 import { Observable } from "rxjs";
 import * as stream from "stream";
 import { Definition } from './Definition';
+import { QueryResult } from "./bsbAPI";
 export declare enum MSG_TYPE {
     /** request info telegram */
     QINF = 1,
@@ -44,11 +45,6 @@ export interface RAWMessage {
     crc: number[];
     payload: number[];
 }
-declare type busRequestAnswer = null | {
-    command: Command;
-    value: any;
-    msg: RAWMessage;
-};
 export declare class BSB {
     Log$: Observable<any>;
     private log$;
@@ -70,7 +66,10 @@ export declare class BSB {
     connect(stream: stream.Duplex): void;
     connect(ip: string, port: number): void;
     private sentCommand;
-    set(param: number, value: object, dst?: number): Promise<busRequestAnswer>;
-    get(param: number | number[], dst?: number): Promise<any>;
+    set(param: number, value: number | string | null, dst?: number): Promise<{
+        command: Command;
+        value: Payload;
+        msg: RAWMessage;
+    } | null | undefined>;
+    get(param: number | number[], dst?: number): Promise<QueryResult>;
 }
-export {};
