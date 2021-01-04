@@ -1,11 +1,11 @@
-import { Value, Command } from './interfaces'
+import { Value, Command } from '../interfaces'
 
-export class StringValue implements Value<string> {
+export class String implements Value<string> {
 
     public value: string | null = null
     private command : Command
 
-    constructor (data: number[] | string | Date, command: Command ) {
+    constructor (data: number[] | string | null | number, command: Command ) {
         this.command = command;
         if (data instanceof Array) {
             let payload = data;
@@ -18,6 +18,10 @@ export class StringValue implements Value<string> {
         {
             this.value = data
         }
+    }
+
+    public toPayload () {
+        return []
     }
 
     public toString() {

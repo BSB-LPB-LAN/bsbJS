@@ -1,12 +1,12 @@
-import { Value, Command, TranslateItem } from './interfaces'
+import { Value, Command, TranslateItem } from '../interfaces'
 
-import { Helper } from './Helper'
+import { Helper } from '../Helper'
 
-export class ErrorValue implements Value<number> {
+export class Error implements Value<number> {
 
     public value: number | null = null
 
-    constructor(data: number[] | number) {
+    constructor(data: number[] | number | string | null) {
         if (data instanceof Array) {
 
             let payload = data
@@ -28,7 +28,11 @@ export class ErrorValue implements Value<number> {
         }
     }
 
+    public toPayload () {
+        return []
+    }
+
     public toString(lang: string = 'KEY') {
-        return this.value ?? 0
+        return this.value?.toString() ?? '0'
     }
 }

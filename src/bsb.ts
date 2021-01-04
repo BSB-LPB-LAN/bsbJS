@@ -1,22 +1,13 @@
-import { BSBDefinition, Command, TranslateItem, Device, Value } from "./interfaces";
+import { BSBDefinition, Command, TranslateItem, Device, Value, Payload } from "./interfaces";
 import { Observable, Subject } from "rxjs";
 import * as net from "net";
 import * as stream from "stream";
 import e from "express";
 
-import { DateTimeValue } from './DateTimeValue'
-import { DayMonthValue } from './DayMonthValue'
-import { TimeProgValues } from "./TimeProg";
-import { HourMinuteValue } from "./HourMinuteValue";
-import { StringValue } from "./StringValue";
-import { NumberValue } from "./NumberValue";
-import { EnumValue } from "./EnumValue";
-import { BitValue } from "./BitValue";
-
+import * as Payloads from './Payloads/'
 import { Definition } from './Definition'
 import { Helper } from './Helper'
-import { ErrorValue } from "./ErrorValue";
-import { trace } from "console";
+import { QueryResult } from "./bsbAPI"
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -86,7 +77,7 @@ type busRequest = {
 
 type busRequestAnswer = null | { 
     command: Command
-    value: any
+    value: Payload
     msg: RAWMessage
 }
 export class BSB {
@@ -197,51 +188,13 @@ export class BSB {
         }
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF) {
-
-            // add Parse of SET Messages also to the Type.from() functions
             if (command) {
-
-                switch (command.type.datatype) {
-                    case 'BITS':
-                        value = new BitValue(msg.payload, command)
-                        break
-                    case 'ENUM':
-                        value = new EnumValue(msg.payload, command)
-                        break
-                    case 'VALS':
-                        value = new NumberValue(msg.payload, command)
-                        break;
-                    case 'DDMM':
-                        value = new DayMonthValue(msg.payload, command)
-                        break
-                    case 'DTTM':
-                        switch (command.type.name) {
-                            case 'DATETIME':
-                                value = new DateTimeValue(msg.payload, command)
-                                break
-                            case 'TIMEPROG':
-                                value = new TimeProgValues(msg.payload, command)
-                                break
-                        }
-                        break;
-                    case 'HHMM':
-                        value = new HourMinuteValue(msg.payload, command)
-                        break;
-                    case 'STRN':
-                        value = new StringValue(msg.payload, command)
-                        break;
-                    case 'DWHM':
-                        // ignore only PPS
-                        break;
-                    case 'WDAY':
-                        // ignore because not used in any command
-                        break
-                }
+                value = Payloads.from(msg.payload, command)
             }
         }
 
         if (msg.typ == MSG_TYPE.ERR && command) {
-            value = new ErrorValue(msg.payload)
+            value = new Payloads.Error(msg.payload)
         }
 
         if (msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ERR) {
@@ -249,7 +202,7 @@ export class BSB {
                 this.openRequest.done({
                     msg: msg,
                     command: command,
-                    value: value as object
+                    value: value as Payload
                 })
                 this.openRequest = null
             }
@@ -334,7 +287,7 @@ export class BSB {
     }
 
     // rename to sentCommand, with optional value
-    private sentCommand(param: number, value?: object, dst: number = 0x00): Promise<busRequestAnswer> {
+    private sentCommand(param: number, value?: Payload, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
         // check if command is NOT readonly if (value)
@@ -384,13 +337,13 @@ export class BSB {
         let command = this.definition.findParam(param, this.device)
 
         if (command) {
-            let val = new NumberValue(value, command)
+            let val = Payloads.from(value, command)
 
             return await this.sentCommand(param, val, dst)
         }
     } 
 
-    public async get(param: number | number[], dst: number = 0x00): Promise<any> {
+    public async get(param: number | number[], dst: number = 0x00): Promise<QueryResult> {
         if (!Array.isArray(param)) {
             param = [param]
         }
@@ -401,7 +354,7 @@ export class BSB {
         }
         let resAll = await Promise.all(queue)
 
-        let result: any = {}
+        let result: QueryResult = {}
         for (let res of resAll) {
 
             if (res) {
@@ -409,24 +362,24 @@ export class BSB {
                 let error = 0
                 let value = res.value?.toString(this.language)
                 let desc = ''
-                if (res.value instanceof ErrorValue) {
-                    error = value
+                if (res.value instanceof Payloads.Error) {
+                    error = res.value.value ?? 0
                     value = ''
                 }
 
-                if (res.value instanceof EnumValue) {
+                if (res.value instanceof Payloads.Enum) {
                     desc = value
-                    value = res.value.value
+                    value = res.value.value?.toString()?? ''
                 }
 
                 result[res.command.parameter] = {
-                    name: Helper.getLanguage(res.command.description, this.language),
+                    name: Helper.getLanguage(res.command.description, this.language) ?? '',
                     error: error,
                     value: value,
                     desc: desc,
                     dataType: res.command.type.datatype_id,
                     readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
-                    unit: Helper.getLanguage(res.command.type.unit, this.language)
+                    unit: Helper.getLanguage(res.command.type.unit, this.language) ?? ''
                 }
             }
         }

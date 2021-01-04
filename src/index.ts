@@ -3,7 +3,6 @@ import { BSB } from './bsb'
 import { Definition } from './Definition'
 
 import express from 'express';
-import { NumberValue } from "./NumberValue";
 
 let rawdata = fs.readFileSync('../../BSB_lan_def2JSON/all.json')
 let config = JSON.parse(rawdata as any)

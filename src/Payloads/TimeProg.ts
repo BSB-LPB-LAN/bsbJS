@@ -1,4 +1,4 @@
-import { Value, Command } from './interfaces'
+import { Value, Command } from '../interfaces'
 
 export class TimeProgEntry {
     public start?: Date
@@ -24,12 +24,12 @@ export class TimeProgEntry {
     public static empty = new TimeProgEntry()
 }
 
-export class TimeProgValues implements Value<TimeProgEntry[]> {
+export class TimeProg implements Value<TimeProgEntry[]> {
 
     public value: TimeProgEntry[] | null = null
     private command: Command
 
-    constructor(data: number[] | string, command: Command) {
+    constructor(data: number[] | string | null, command: Command) {
         this.command = command;
 
         this.value = []
@@ -56,6 +56,10 @@ export class TimeProgValues implements Value<TimeProgEntry[]> {
             // ToDo Parse String
             //this.value = new Date(data)
         }
+    }
+
+    public toPayload () {
+        return []
     }
 
     public toString() {

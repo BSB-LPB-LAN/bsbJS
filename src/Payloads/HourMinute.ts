@@ -1,17 +1,16 @@
-import { Value, Command } from './interfaces'
+import { Value, Command } from '../interfaces'
 
-export class DayMonthValue implements Value<Date> {
+export class HourMinute implements Value<Date> {
 
     public value: Date | null = null
     private command : Command
 
-    constructor (data: number[] | string | Date, command: Command ) {
+    constructor (data: number[] | string | Date  | null, command: Command ) {
         this.command = command;
-        
         if (data instanceof Array) {
             let payload = data;
                 if ((payload[0] & 0x01) != 0x01) {
-                    this.value = new Date(0, payload[2]-1, payload[3]);
+                    this.value = new Date(0,0,0, payload[1], payload[2]);
                 }
                 else
                     this.value = null;
@@ -24,9 +23,13 @@ export class DayMonthValue implements Value<Date> {
         }
     }
 
-    public toString() {
-        const options = { year: undefined, month: '2-digit', day: '2-digit'};
+    public toPayload () {
+        return []
+    }
 
-        return this.value?.toLocaleString('de-DE', options) ?? '---'
+    public toString() {
+        const options = { hour: '2-digit', minute: '2-digit', seconds: undefined };
+
+        return this.value?.toLocaleTimeString('de-DE', options) ?? '---'
     }
 }

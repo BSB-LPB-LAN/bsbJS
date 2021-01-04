@@ -1,8 +1,8 @@
-import { Value, Command, TranslateItem } from './interfaces' 
+import { Value, Command, TranslateItem } from '../interfaces' 
 
-import { Helper } from './Helper'
+import { Helper } from '../Helper'
 
-export class BitValue implements Value<number> {
+export class Bit implements Value<number> {
 
     public value: number | null = null
 
@@ -10,7 +10,7 @@ export class BitValue implements Value<number> {
 
     private command: Command
 
-    constructor(data: number[] | Date, command: Command) {
+    constructor(data: number[] | number | string | null, command: Command) {
         this.command = command;
         if (data instanceof Array) {
 
@@ -55,6 +55,10 @@ export class BitValue implements Value<number> {
         } else if (typeof (data) == 'number') {
             this.value = data
         }
+    }
+
+    public toPayload () {
+        return []
     }
 
     public toString(lang: string = 'KEY') {

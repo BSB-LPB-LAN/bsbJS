@@ -1,6 +1,6 @@
-import { Value, Command } from './interfaces'
+import { Value, Command } from '../interfaces'
 
-export class NumberValue implements Value<number> {
+export class Number implements Value<number> {
 
     public value: number | null = null
     private command: Command
@@ -55,6 +55,10 @@ export class NumberValue implements Value<number> {
         } else if (typeof (data) == 'string') {
             this.value = parseInt(data, 10)
         }
+    }
+
+    public toPayload () {
+        return []
     }
 
     public toString() {

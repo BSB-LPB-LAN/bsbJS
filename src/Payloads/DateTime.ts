@@ -1,11 +1,11 @@
-import { Value, Command } from './interfaces'
+import { Value, Command } from '../interfaces'
 
-export class DateTimeValue implements Value<Date> {
+export class DateTime implements Value<Date> {
 
     public value: Date | null = null
     private command : Command
 
-    constructor (data: number[] | string | Date, command: Command ) {
+    constructor (data: number[] | string | Date | number | null, command: Command ) {
         this.command = command;
         if (data instanceof Array) {
             let payload = data;
@@ -21,6 +21,10 @@ export class DateTimeValue implements Value<Date> {
         {
             this.value = new Date(data)
         }
+    }
+
+    public toPayload () {
+        return []
     }
 
     public toString () {

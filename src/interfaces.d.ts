@@ -1,5 +1,10 @@
-export interface Value<T> {
+export interface Value<T> extends Payload{
     value: T | null;
+}
+
+export interface Payload {
+    toString: (lang?: string) => string
+    toPayload: () => number[]
 }
 
 

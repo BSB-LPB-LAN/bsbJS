@@ -1,8 +1,8 @@
-import { Value, Command, TranslateItem } from './interfaces' 
+import { Value, Command, TranslateItem } from '../interfaces' 
 
-import { Helper } from './Helper'
+import { Helper } from '../Helper'
 
-export class EnumValue implements Value<number> {
+export class Enum implements Value<number> {
 
     public value: number | null = null
 
@@ -10,7 +10,7 @@ export class EnumValue implements Value<number> {
 
     private command: Command
 
-    constructor(data: number[] | string | Date, command: Command) {
+    constructor(data: number[] | string | number | null, command: Command) {
         this.command = command;
         if (data instanceof Array) {
 
@@ -59,6 +59,11 @@ export class EnumValue implements Value<number> {
             //this.value = parseInt(data, 10)
         }
     }
+
+    public toPayload () {
+        return []
+    }
+    
 
     public toString(lang: string = 'KEY') {
         if (this.value) {
