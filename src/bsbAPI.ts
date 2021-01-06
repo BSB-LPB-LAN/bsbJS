@@ -1,4 +1,4 @@
-import { BSBDefinition, KeyItem } from './interfaces'
+import { BSBDefinition, KeyItem, Category } from './interfaces'
 import express from 'express';
 import { BSB, MSG_TYPE } from './bsb';
 import { Definition } from './Definition';
@@ -26,12 +26,12 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
             .map(item => parseInt(item, 10))
 
         bsb.get(query)
-            .then(data => { 
+            .then(data => {
                 let result: QueryResult = {}
                 for (let res of data) {
-        
+
                     if (res) {
-        
+
                         let error = 0
                         let value = res.value?.toString(language)
                         let desc = ''
@@ -39,12 +39,12 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
                             error = res.value.value ?? 0
                             value = ''
                         }
-        
+
                         if (res.value instanceof Payloads.Enum) {
                             desc = value
                             value = res.value.value?.toString() ?? ''
                         }
-        
+
                         result[res.command.parameter] = {
                             name: Helper.getLanguage(res.command.description, language) ?? '',
                             error: error,
@@ -84,13 +84,86 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
     })
 
     app.get('/JK=:query', (req, res) => {
-        // /JK=ALL, JK=1,...
-        res.send('get K')
+        if (req.params.query.toUpperCase() == 'ALL') {
+            let resultAll: KeyItem<{ name: string, min: number, max: number }> = {}
+            let i = 0
+            for (let key in definition.config.categories) {
+
+                let item = definition.config.categories[key]
+                if (item.commands.length > 0) {
+                    resultAll[i] = {
+                        name: Helper.getLanguage(item.name, language) ?? '',
+                        min: item.min,
+                        max: item.max
+                    }
+                }
+                i++
+            }
+            res.json(resultAll)
+        }
+        else {
+            let resultID: KeyItem<{ name: string, possibleValues: { enumValue: number, desc: string }[], isswitch: number, dataType: number, readonly: number, unit: string }> = {}
+            let i = 0
+            let cat: Category | null = null
+            for (let key in definition.config.categories) {
+                if (i == parseInt(req.params.query, 10)) {
+                    cat = definition.config.categories[key]
+                }
+                i++
+            }
+            if (cat) {
+                // todo: fix enumValue from hex -> number
+                // check strange results for 701-703 
+                // bsbLAN != bsbJS
+
+                for (let i = cat.min; i <= cat.max; i++) {
+                    let item = definition.findParam(i, bsb.device)
+                    if (item) {
+
+                        let enumValues = []
+
+                        for (let key in item.enum) {
+                            enumValues.push({
+                                enumValue: key,
+                                desc: Helper.getLanguage(item.enum[key], language) ?? 'missing ' + key
+                            })
+                        }
+
+                        resultID[item.parameter] = {
+                            name: Helper.getLanguage(item.description, language) ?? '',
+                            possibleValues: enumValues as any,
+                            dataType: item.type.datatype_id,
+                            isswitch: 0,
+                            readonly: ((item.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
+                            unit: Helper.getLanguage(item.type.unit, language) ?? ''
+                        }
+                    }
+                }
+            }
+
+            res.json(resultID)
+
+        }
     })
 
     app.get('/JI', (req, res) => {
-        // /JI -> alle Infos
-        res.send('get K')
+        let result = {
+            "name": "bsbJS-LAN",
+            "version": "1.1.53-20201110150552",
+            "freeram": 9999999,
+            "uptime": 1317313836,
+            "MAC": "00:00:00:00:00:00",
+            "freespace": 0,
+            "bus": "BSB",
+            "buswritable": 1,
+            "busaddr": 67,
+            "busdest": 0,
+            "monitor": 1,
+            "verbose": 1,
+            "protectedGPIO": [],
+            "averages": []
+        }
+        res.json(result)
     })
 
 }

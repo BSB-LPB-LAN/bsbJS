@@ -1,9 +1,9 @@
-import { Command, Device } from './interfaces';
+import { BSBDefinition, Command, Device } from './interfaces';
 export declare class Definition {
-    private config;
+    config: BSBDefinition;
     private mapCmds;
     private mapParams;
-    constructor(config: any);
+    constructor(config: BSBDefinition);
     private find;
     private findCMDorParam;
     findCMD(cmd: string, device: Device): Command | null;

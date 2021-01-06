@@ -1,4 +1,4 @@
-import { BSBDefinition, Command, TranslateItem, Device, Value, Payload } from "./interfaces";
+import { Command, Device, Payload } from "./interfaces";
 import { Observable, Subject } from "rxjs";
 import * as net from "net";
 import * as stream from "stream";
@@ -62,7 +62,7 @@ export interface RAWMessage {
     cmd: number[];
     payload: number[];
     crc: number[];
-    
+
     data: number[];
 }
 
@@ -74,59 +74,40 @@ type busRequest = {
     error: (reason?: any) => void
 }
 
-type busRequestAnswer = null | {
-    command: Command
+export interface busRequestAnswerNC {
+    command: Command | null | undefined
     value: Payload
     msg: RAWMessage
 }
+
+export interface busRequestAnswerC extends busRequestAnswerNC {
+    command: Command
+}
+
+type busRequestAnswer = null | busRequestAnswerC
 export class BSB {
 
-
-    //#region comment howt read device familiy & Variant
-    // {
-    //     "6225": {
-    //       "name": "Gerätefamilie",
-    //       "error": 0,
-    //       "value": "163",
-    //       "desc": "",
-    //       "dataType": 0,
-    //       "readonly": 0,
-    //       "unit": ""
-    //     }
-    //   }
-
-    // {
-    //     "6226": {
-    //       "name": "Gerätevariante",
-    //       "error": 0,
-    //       "value": "5",
-    //       "desc": "",
-    //       "dataType": 0,
-    //       "readonly": 0,
-    //       "unit": ""
-    //     }
-    //   }
-    //#endregion
-
     //#region Variables & Properties
-    public Log$: Observable<any>;
-    private log$: Subject<any>;
+    public Log$: Observable<busRequestAnswerNC>;
+    private log$: Subject<busRequestAnswerNC>;
 
     private definition: Definition
     private client: stream.Duplex | null = null
 
     private buffer: number[] = []
 
-    private device: Device
+    public device: Device
 
     private src: number
 
     private lastReceivedData: Date = new Date(0)
+    private lastFetchDevice: number = 0
 
     private sentQueue: busRequest[] = []
     private openRequest: busRequest | null = null
     //#endregion
 
+    //#region constructor
     constructor(definition: Definition, device: Device, src: number = 0xC2) {
 
         this.definition = definition;
@@ -138,6 +119,32 @@ export class BSB {
 
         setInterval(() => this.checkSendQueue(), 10)
     }
+    //#endregion
+
+    //#region connect
+    public connect(stream: stream.Duplex): void;
+    public connect(ip: string, port: number): void;
+    public connect(param1: string | stream.Duplex, param2?: number) {
+
+        try {
+            this.client?.off('data', data => this.newData(data));
+        } catch { }
+
+        if (param1 instanceof stream.Duplex) {
+            this.client = param1
+        }
+        else {
+            const socket = new net.Socket()
+
+            socket.connect(param2 ?? 0, param1, () => {
+                console.log('connected');
+            });
+            this.client = socket
+        }
+
+        this.client.on('data', data => this.newData(data));
+    }
+    //#endregion
 
     private checkSendQueue() {
         // ToDo check for timeout
@@ -161,8 +168,14 @@ export class BSB {
                 this.client.write(Uint8Array.from(newRequest.data))
             }
         }
-    }
 
+        if (this.device.family == 255 && this.device.var == 255 && (Date.now()-this.lastFetchDevice > 2000)) {
+            this.get(6225)
+            this.get(6226)
+            console.log(this.device)
+            this.lastFetchDevice = Date.now()
+        }
+    }
 
     private calcCRC(data: number[]): [number, number] {
         function crc16(crc16: number, item: number): number {
@@ -213,6 +226,14 @@ export class BSB {
         if (command) {
             if ((msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF)) {
                 value = Payloads.from(msg.payload, command)
+
+                if (value instanceof Payloads.Number && value.value) {
+                    if (value.value  && command.parameter == 6225)
+                        this.device.family = value.value
+
+                    if (value.value  && command.parameter == 6226)
+                        this.device.var = value.value
+                }
             }
 
             if (msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.NACK) {
@@ -254,7 +275,7 @@ export class BSB {
                     let crcCalculated = Helper.toHexString(this.calcCRC(newmessage.slice(0, newmessage.length - 2)));
 
                     if (crc == crcCalculated) {
-                        let msg = {
+                        let msg: RAWMessage = {
                             data: newmessage,
                             src: newmessage[1] & 0x7F,
                             dst: newmessage[2],
@@ -263,7 +284,7 @@ export class BSB {
                             crc: newmessage.slice(newmessage.length - 2),
                             payload: newmessage.slice(9, newmessage.length - 2)
                         };
-                        this.parseMessage(msg as any);
+                        this.parseMessage(msg)
 
                         // todo if pos <> 0, send message with
                         // unprocessed data
@@ -289,42 +310,14 @@ export class BSB {
         this.parseBuffer()
     }
 
-    public connect(stream: stream.Duplex): void;
-    public connect(ip: string, port: number): void;
-    public connect(param1: string | stream.Duplex, param2?: number) {
-
-        try {
-            this.client?.off('data', data => this.newData(data));
-        } catch { }
-
-        if (param1 instanceof stream.Duplex) {
-            this.client = param1
-        }
-        else {
-            const socket = new net.Socket()
-
-            socket.connect(param2 ?? 0, param1, () => {
-                console.log('connected');
-            });
-            this.client = socket
-        }
-
-        this.client.on('data', data => this.newData(data));
-    }
-
-    // rename to sentCommand, with optional value
-    private sentCommand(param: number, val?: any, dst: number = 0x00): Promise<busRequestAnswer> {
+    private sentCommand(param: number, value?: any, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
-        // ToDo: check ReadOnly Commands could not be written
-
-        // check if command is NOT readonly if (value)
-
         if (command) {
-            let value: Payload | null = null
+            let readonly = (command.flags?.indexOf('READONLY') ?? -1) != -1
 
-            if (val)
-                value = Payloads.from(val, command)
+            if (this.device.family == 255 && this.device.var == 255)
+                readonly = true
 
             let cmd: number[] = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
 
@@ -333,8 +326,12 @@ export class BSB {
             let payload: number[] = []
 
             if (value) {
-                payload = value.toPayload()
+                if (readonly) {
+                    // ToDo: ERROR write not possible for readonly
+                    return new Promise((done) => { done(null) })
+                }
 
+                payload = Payloads.from(value, command).toPayload()
                 type = MSG_TYPE.SET
                 len += payload.length
             }

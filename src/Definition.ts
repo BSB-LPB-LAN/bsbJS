@@ -2,12 +2,12 @@ import { BSBDefinition, CmdMap, Command, Device } from './interfaces'
 
 export class Definition {
 
-    private config: BSBDefinition;
+    public config: BSBDefinition;
 
     private mapCmds: CmdMap = {};
     private mapParams: CmdMap = {};
 
-    constructor(config: any) {
+    constructor(config: BSBDefinition) {
         this.config = config;
 
         for (let catKEY in this.config.categories) {
@@ -29,6 +29,8 @@ export class Definition {
 
     private find(place: 'Cmd' | 'Param', key: string, dev_family: number, dev_variant: number): Command | null {
         let item: Command[]
+
+// todo take care of NO_CMD flag
 
         if (place == 'Cmd') {
             item = this.mapCmds[key]

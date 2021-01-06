@@ -36,38 +36,43 @@ export declare enum MSG_TYPE {
     IA2 = 21
 }
 export interface RAWMessage {
-    data: number[];
     src: number;
     dst: number;
     typ: MSG_TYPE;
     cmd: number[];
-    crc: number[];
     payload: number[];
+    crc: number[];
+    data: number[];
 }
-declare type busRequestAnswer = null | {
-    command: Command;
+export interface busRequestAnswerNC {
+    command: Command | null | undefined;
     value: Payload;
     msg: RAWMessage;
-};
+}
+export interface busRequestAnswerC extends busRequestAnswerNC {
+    command: Command;
+}
+declare type busRequestAnswer = null | busRequestAnswerC;
 export declare class BSB {
-    Log$: Observable<any>;
+    Log$: Observable<busRequestAnswerNC>;
     private log$;
     private definition;
     private client;
     private buffer;
-    private device;
+    device: Device;
     private src;
     private lastReceivedData;
+    private lastFetchDevice;
     private sentQueue;
     private openRequest;
     constructor(definition: Definition, device: Device, src?: number);
+    connect(stream: stream.Duplex): void;
+    connect(ip: string, port: number): void;
     private checkSendQueue;
     private calcCRC;
     private parseMessage;
     private parseBuffer;
     private newData;
-    connect(stream: stream.Duplex): void;
-    connect(ip: string, port: number): void;
     private sentCommand;
     set(param: number, value: any, dst?: number): Promise<busRequestAnswer>;
     get(param: number | number[], dst?: number): Promise<busRequestAnswer[]>;
