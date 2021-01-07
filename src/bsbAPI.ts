@@ -60,6 +60,46 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
             })
     })
 
+    app.get(['/JR=:query', '/api/v0/JR=:query'], (req, res) => {
+        let query = req.params.query
+            .split(',')
+            .map(item => parseInt(item, 10))
+
+        bsb.getResetValue(query)
+            .then(data => {
+                let result: QueryResult = {}
+                for (let res of data) {
+
+                    if (res) {
+
+                        let error = 0
+                        let value = res.value?.toString(language)
+                        let desc = ''
+                        if (res.value instanceof Payloads.Error) {
+                            error = res.value.value ?? 0
+                            value = ''
+                        }
+
+                        if (res.value instanceof Payloads.Enum) {
+                            desc = value
+                            value = res.value.value?.toString() ?? ''
+                        }
+
+                        result[res.command.parameter] = {
+                            name: Helper.getLanguage(res.command.description, language) ?? '',
+                            error: error,
+                            value: value,
+                            desc: desc,
+                            dataType: res.command.type.datatype_id,
+                            readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
+                            unit: Helper.getLanguage(res.command.type.unit, language) ?? ''
+                        }
+                    }
+                }
+                res.json(result)
+            })
+    })
+
     app.post(['/JS', '/api/v0/JS'], (req, res) => {
         var data = "";
         req.on('data', function (chunk) { data += chunk })
@@ -160,9 +200,33 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
             "busdest": 0,
             "monitor": 1,
             "verbose": 1,
-            "protectedGPIO": [],
-            "averages": []
+            // "onewirebus": 7,
+            // "onewiresensors": 0,
+            // "dhtbus": [
+            //   { "pin": 2 },
+            //   { "pin": 3 }
+            // ],
+            "protectedGPIO": [
+            //   { "pin": 0 },
+            //   { "pin": 1 },
+            ],
+            "averages": [
+                // { "parameter": 8700 },
+                // { "parameter": 8326 }
+              ],
+              "logvalues": 0, // oder halt 1
+              "loginterval": 3600,
+              "logged": [
+                // { "parameter": 8700 },
+                // { "parameter": 8743 },
+                // { "parameter": 8314 }
+              ]
         }
+        res.json(result)
+    })
+
+    app.get('/JV', (req, res) => {
+        let result = { "api_version": "2.0" }
         res.json(result)
     })
 

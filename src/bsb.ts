@@ -149,13 +149,19 @@ export class BSB {
     private checkSendQueue() {
         // ToDo check for timeout
         // if answers from the dst are already delivered,....
-        if (this.openRequest?.timestamp) {
-            let timeDiff = ((new Date().getTime()) - this.openRequest.timestamp.getTime()) / 1000
+        if (this.openRequest) {
+                if (this.openRequest.timestamp) {
+                let timeDiff = ((new Date().getTime()) - this.openRequest.timestamp.getTime()) / 1000
 
-            // ToDo: make Timeout configurable now 5seconds
-            if (timeDiff > 5) {
-                this.openRequest.error('No Answer Timeout')
-                this.openRequest = null
+                // ToDo: make Timeout configurable now 5seconds
+                if (timeDiff > 5) {
+                    this.openRequest.done(null)
+                    this.openRequest = null
+                }
+            }
+            else
+            {
+                this.openRequest.timestamp = new Date()
             }
         }
 
@@ -169,10 +175,14 @@ export class BSB {
             }
         }
 
-        if (this.device.family == 255 && this.device.var == 255 && (Date.now()-this.lastFetchDevice > 2000)) {
-            this.get(6225)
-            this.get(6226)
-            console.log(this.device)
+        // if no device familiy or variant is set try to fetch
+        if ((this.device.family == 0 || this.device.var == 0) && (Date.now()-this.lastFetchDevice > 2000)) {
+            if (this.device.family == 0) {
+                this.get(6225)
+            }
+            if (this.device.var == 0) { 
+                this.get(6226)
+            }
             this.lastFetchDevice = Date.now()
         }
     }
@@ -206,7 +216,7 @@ export class BSB {
 
     private parseMessage(msg: RAWMessage) {
 
-        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.SET || msg.typ == MSG_TYPE.INF) {
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.QRV || msg.typ == MSG_TYPE.SET || msg.typ == MSG_TYPE.INF) {
             let swap = msg.cmd[0];
             msg.cmd[0] = msg.cmd[1];
             msg.cmd[1] = swap;
@@ -217,14 +227,14 @@ export class BSB {
 
         let value: string | object | null = null
 
-        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
+        if (msg.typ == MSG_TYPE.QUR || msg.typ == MSG_TYPE.QRV || msg.typ == MSG_TYPE.INF || msg.typ == MSG_TYPE.SET) {
             value = Helper.toHexString(msg.payload);
             if (value.length > 0)
                 value = 'Payload: 0x' + value;
         }
 
         if (command) {
-            if ((msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.INF)) {
+            if ((msg.typ == MSG_TYPE.ANS || msg.typ == MSG_TYPE.ARV || msg.typ == MSG_TYPE.INF)) {
                 value = Payloads.from(msg.payload, command)
 
                 if (value instanceof Payloads.Number && value.value) {
@@ -236,13 +246,13 @@ export class BSB {
                 }
             }
 
-            if (msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.NACK) {
+            if (msg.typ == MSG_TYPE.ERR || msg.typ == MSG_TYPE.QRE || msg.typ == MSG_TYPE.NACK) {
                 value = new Payloads.Error(msg.payload)
             }
 
             // for INF Messages, see the reRead from the bus as succsessfull receive
-            if (msg.typ != MSG_TYPE.QUR && msg.typ != MSG_TYPE.SET) {
-                if (this.openRequest && (this.openRequest?.command.parameter === command.parameter)) {
+            if (msg.typ != MSG_TYPE.QUR && msg.typ != MSG_TYPE.QRV && msg.typ != MSG_TYPE.SET) {
+                if (this.openRequest && (this.openRequest?.command.command === command.command)) {
                     this.openRequest.done({
                         msg: msg,
                         command: command,
@@ -310,7 +320,7 @@ export class BSB {
         this.parseBuffer()
     }
 
-    private sentCommand(param: number, value?: any, dst: number = 0x00): Promise<busRequestAnswer> {
+    private sentCommand(param: number, type: MSG_TYPE, value?: any, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
         if (command) {
@@ -322,21 +332,20 @@ export class BSB {
             let cmd: number[] = Array.prototype.slice.call(Buffer.from(command.command.replace(/0x/g, ''), "hex"), 0)
 
             let len = 11
-            let type = MSG_TYPE.QUR
             let payload: number[] = []
 
-            if (value) {
+            if (value && type == MSG_TYPE.SET) {
                 if (readonly) {
                     // ToDo: ERROR write not possible for readonly
                     return new Promise((done) => { done(null) })
                 }
 
                 payload = Payloads.from(value, command).toPayload()
-                type = MSG_TYPE.SET
+                
                 len += payload.length
             }
 
-            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET || type == MSG_TYPE.INF) {
+            if (type == MSG_TYPE.QUR || type == MSG_TYPE.SET || type == MSG_TYPE.INF || type == MSG_TYPE.QRV) {
                 const swap = cmd[0]
                 cmd[0] = cmd[1]
                 cmd[1] = swap
@@ -362,7 +371,19 @@ export class BSB {
     }
 
     public async set(param: number, value: any, dst: number = 0x00) {
-        return await this.sentCommand(param, value, dst)
+        return await this.sentCommand(param, MSG_TYPE.SET, value, dst)
+    }
+
+    public async getResetValue(param: number | number[], dst: number = 0x00): Promise<busRequestAnswer[]> {
+        if (!Array.isArray(param)) {
+            param = [param]
+        }
+
+        let queue = []
+        for (let item of param) {
+            queue.push(this.sentCommand(item, MSG_TYPE.QRV, undefined, dst))
+        }
+        return await Promise.all(queue)
     }
 
     public async get(param: number | number[], dst: number = 0x00): Promise<busRequestAnswer[]> {
@@ -372,7 +393,7 @@ export class BSB {
 
         let queue = []
         for (let item of param) {
-            queue.push(this.sentCommand(item, undefined, dst))
+            queue.push(this.sentCommand(item, MSG_TYPE.QUR, undefined, dst))
         }
         return await Promise.all(queue)
     }

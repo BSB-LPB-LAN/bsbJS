@@ -75,6 +75,7 @@ export declare class BSB {
     private newData;
     private sentCommand;
     set(param: number, value: any, dst?: number): Promise<busRequestAnswer>;
+    getResetValue(param: number | number[], dst?: number): Promise<busRequestAnswer[]>;
     get(param: number | number[], dst?: number): Promise<busRequestAnswer[]>;
 }
 export {};

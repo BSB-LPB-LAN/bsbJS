@@ -13,7 +13,7 @@ let definition = new Definition(config)
 let language = 'DE'
 
 //{ family: 163, var: 5 }
-let bsb = new BSB(definition, { family: 255, var: 255 }, 0xC3)
+let bsb = new BSB(definition, { family: 0, var: 0 }, 0xC3)
 bsb.connect('192.168.203.179', 1000)
 
 const app = express()
