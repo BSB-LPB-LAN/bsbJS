@@ -7,6 +7,27 @@ import { Helper } from './Helper'
 
 export interface QueryResult extends KeyItem<QueryResultEntry> { }
 
+export interface EnumDescEntry { 
+    enumValue: number
+    desc: string 
+}
+
+type EnumDescEntries = EnumDescEntry[]
+
+export interface ReadConfigEntry {
+    id: string
+    type: string
+    format: string
+    category: string
+    name: string
+    value: string
+    possibleValues: EnumDescEntries
+}
+
+export interface ReadConfig extends KeyItem<ReadConfigEntry> {
+
+}
+
 export interface QueryResultEntry {
     name: string
     error: number
@@ -19,15 +40,18 @@ export interface QueryResultEntry {
 
 export function add_v0_API(app: express.Express, bsb: BSB, definition: Definition, language: string) {
 
+
+// "Destination" override DST Adress can be used for /JQ, /JS, /JR
+
     // app.post('/JQ') -> paramter from body
-    app.get(['/JQ=:query', '/api/v0/JQ=:query'], (req, res) => {
+    app.get(['/JR=:query', '/api/v0/JR=:query'], (req, res) => {
         let query = req.params.query
             .split(',')
             .map(item => parseInt(item, 10))
 
-        bsb.get(query)
+        bsb.getResetValue(query)
             .then(data => {
-                let result: QueryResult = {}
+                let result: KeyItem<{ error: number, value: string}> = {}
                 for (let res of data) {
 
                     if (res) {
@@ -46,13 +70,8 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
                         }
 
                         result[res.command.parameter] = {
-                            name: Helper.getLanguage(res.command.description, language) ?? '',
                             error: error,
                             value: value,
-                            desc: desc,
-                            dataType: res.command.type.datatype_id,
-                            readonly: ((res.command.flags?.indexOf('READONLY') ?? -1) != -1) ? 1 : 0,
-                            unit: Helper.getLanguage(res.command.type.unit, language) ?? ''
                         }
                     }
                 }
@@ -60,12 +79,12 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
             })
     })
 
-    app.get(['/JR=:query', '/api/v0/JR=:query'], (req, res) => {
+    app.get(['/JQ=:query', '/api/v0/JQ=:query'], (req, res) => {
         let query = req.params.query
             .split(',')
             .map(item => parseInt(item, 10))
 
-        bsb.getResetValue(query)
+        bsb.get(query)
             .then(data => {
                 let result: QueryResult = {}
                 for (let res of data) {
@@ -142,7 +161,7 @@ export function add_v0_API(app: express.Express, bsb: BSB, definition: Definitio
             res.json(resultAll)
         }
         else {
-            let resultID: KeyItem<{ name: string, possibleValues: { enumValue: number, desc: string }[], isswitch: number, dataType: number, readonly: number, unit: string }> = {}
+            let resultID: KeyItem<{ name: string, possibleValues: EnumDescEntries, isswitch: number, dataType: number, readonly: number, unit: string }> = {}
             let i = 0
             let cat: Category | null = null
             for (let key in definition.config.categories) {
