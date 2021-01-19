@@ -6,7 +6,7 @@ import express from 'express';
 import { add_v0_API } from "./bsbAPI"
 import { Helper } from "./Helper";
 
-import * as  config from './../../BSB_lan_def2JSON/all.json'
+import * as  config from './all.json'
 
 let definition = new Definition(config as any)
 

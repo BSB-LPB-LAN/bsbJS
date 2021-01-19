@@ -6,7 +6,7 @@ import * as Payloads from "./"
  * @param data can be a payload with datatype number[] or data with string, number or null for empty
  * @param command the command
  */
-export function from(data: number[] | number | string | null, command: Command) {
+export function from(data: number[] | number | string | null, command: Command) {
     switch (command.type.datatype) {
         case 'BITS':
             return new Payloads.Bit(data, command)
@@ -21,21 +21,22 @@ export function from(data: number[] | number | string | null, command: Command)
             switch (command.type.name) {
                 case 'DATETIME':
                     return new Payloads.DateTime(data, command)
+                // TODO remove
                 case 'TIMEPROG':
                     if (typeof data !== 'number')
                         return new Payloads.TimeProg(data, command)
             }
             break;
+        case 'TMPR':
+            if (typeof data !== 'number')
+                return new Payloads.TimeProg(data, command)
         case 'HHMM':
             if (typeof data !== 'number')
                 return new Payloads.HourMinute(data, command)
         case 'STRN':
             return new Payloads.String(data, command)
         case 'DWHM':
-            // ignore only PPS
-        case 'WDAY':
-            // ignore because not used in any command
-            break
+        // ignore only PPS
     }
 
     // ToDo add RawPayload as result, with toString of 0x0000
