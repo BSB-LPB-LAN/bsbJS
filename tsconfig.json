@@ -19,7 +19,6 @@
     "dist"
   ],
   "include": [
-    "./**/*.ts",
-    "all.json"
+    "./**/*.ts"
   ],
 }
