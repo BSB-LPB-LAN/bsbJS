@@ -12,7 +12,7 @@
     "emitDecoratorMetadata": true,
     "sourceMap": true,
     "watch": false,
-    "composite": true
+    "baseUrl": "./src/"
   },
   "exclude": [
     "node_modules",
