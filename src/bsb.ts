@@ -3,9 +3,10 @@ import { Observable, Subject } from "rxjs";
 import * as net from "net";
 import * as stream from "stream";
 
+import { Helper } from './Helper'
 import * as Payloads from './Payloads/'
 import { Definition } from './Definition'
-import { Helper } from './Helper'
+
 
 // /* telegram addresses */
 // #define ADDR_HEIZ  0x00
@@ -84,15 +85,20 @@ export interface busRequestAnswerC extends busRequestAnswerNC {
     command: Command
 }
 
-type busRequestAnswer = null | busRequestAnswerC
+
+interface DuplexToClose  extends stream.Duplex {
+    toClose?:boolean
+}
+
+export type busRequestAnswer = null | busRequestAnswerC
 export class BSB {
 
     //#region Variables & Properties
     public Log$: Observable<busRequestAnswerNC>;
     private log$: Subject<busRequestAnswerNC>;
 
-    private definition: Definition
-    private client: stream.Duplex | null = null
+    public definition: Definition
+    private client: DuplexToClose | null = null
 
     private buffer: number[] = []
 
@@ -128,6 +134,8 @@ export class BSB {
 
         try {
             this.client?.off('data', data => this.newData(data));
+            if (this.client?.toClose)
+                this.client.destroy()
         } catch { }
 
         if (param1 instanceof stream.Duplex) {
@@ -139,7 +147,9 @@ export class BSB {
             socket.connect(param2 ?? 0, param1, () => {
                 console.log('connected');
             });
+            
             this.client = socket
+            this.client.toClose = true
         }
 
         this.client.on('data', data => this.newData(data));
@@ -320,7 +330,7 @@ export class BSB {
         this.parseBuffer()
     }
 
-    private sentCommand(param: number, type: MSG_TYPE, value?: any, dst: number = 0x00): Promise<busRequestAnswer> {
+    public sentCommand(param: number, type: MSG_TYPE, value?: any, dst: number = 0x00): Promise<busRequestAnswer> {
         const command = this.definition.findParam(param, this.device)
 
         if (command) {

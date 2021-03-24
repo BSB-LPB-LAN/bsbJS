@@ -1,13 +1,12 @@
 import { Default, Description, Enum, Example, Maximum, Minimum, Required, } from "@tsed/schema";
 import { ParameterSetRequestType } from "./Enums";
 
-
 @Example({ parameter: 700 })
 export class Parameter {
     
     @Required()
     @Description('The id of the parameter.')
-    parameter!:	number
+    parameter:	number = -1
 }
 
 @Example({ parameter: 700, destination: 0 })
@@ -16,7 +15,7 @@ export class ParameterRequest extends Parameter {
     @Minimum(0)
     @Maximum(127)
     @Description('The DST address there the packet is sent on the Bus')
-    destination!: number
+    destination: number = 0
 }
 
 @Example({ parameter: 700, value: "21" })
